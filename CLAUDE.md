@@ -29,7 +29,7 @@ src/
     dataExchange.ts     # Data exchange trigger endpoints (push user/provider, pull stub)
     oauth.ts            # OAuth authorize/token endpoints (DEAD CODE - not mounted)
   controllers/
-    consentsController.ts   # Core consent logic (~20 exported + internal functions)
+    consentsController.ts   # Core consent logic (~27 functions: 20 exported + 7 internal)
     usersController.ts      # User and UserIdentifier management (~10 functions)
     participantsController.ts # Participant CRUD + DSC integration (~9 functions)
     dataExchangeController.ts # Data exchange orchestration (2 functions)
@@ -52,18 +52,33 @@ src/
     emails/             # Email sending (Mandrill + Nodemailer) and HTML templates
     consent-generator/  # Kantara Consent Receipt generator (reference/utility)
     user-reconcilation/ # Cross-participant user matching by email
-    third-party/        # JSON-LD self-description utilities
+    jsonld/             # JSON-LD self-description utilities
+    OAuth/              # OAuth helper utilities
+    joi/                # Joi validation schema helpers
+    jwt/                # JWT token utilities
+    loggers/            # Winston logger configuration with daily-rotate-file
+  errors/              # Custom error classes (BadRequestError, NotFoundError, ForbiddenError, BadEndpointError, ThirdPartyError)
+  types/               # TypeScript type definitions (models, prometheus-x types)
+  views/               # EJS templates (consent.ejs)
   utils/                # Helper functions (checkUserIdentifier, etc.)
   config/
+    database.ts         # MongoDB connection configuration
+    env.ts              # Environment variable loading and defaults
+    mailchimpConfig.ts  # Mailchimp/Mandrill email service configuration
     keys/               # RSA + AES keys for consent signing/encryption
   simulated/
     contract/           # Simulated contract service router (for development)
   tests/                # Mocha test suites
+docker/                 # Docker configuration (app, mongodb)
+terraform/              # Terraform infrastructure (main.tf, variables.tf, outputs.tf)
 docs/
   swagger.json          # OpenAPI 3.0 spec
 postman/
   pmCollection.json     # Postman API collection
 templates/              # Kubernetes Helm templates (deployment, service, secret)
+Chart.yaml              # Helm chart metadata
+values.yaml             # Helm chart default values
+docker-compose.yml      # Docker Compose for local development
 ```
 
 ## Build & Test
@@ -90,7 +105,7 @@ pnpm run generateAES            # Generate AES key for consent encryption
 - API prefix configurable via `API_PREFIX` env var (default: `/v1`)
 
 ## Important Files
-- `src/controllers/consentsController.ts` - Core consent lifecycle logic (largest file, ~1200 lines)
+- `src/controllers/consentsController.ts` - Core consent lifecycle logic (largest file, ~2200 lines)
 - `src/models/Consent/Consent.model.ts` - Consent schema with 30+ fields
 - `src/middleware/auth.ts` - All authentication middleware
 - `docs/swagger.json` - Complete OpenAPI specification

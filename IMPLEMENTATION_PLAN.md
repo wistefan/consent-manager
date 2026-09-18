@@ -95,7 +95,7 @@ Create detailed feature documentation for the remaining modules.
   - **Provider-Triggered Exchange**: `POST /data-exchange/push` — provider pushes data exchange for a user's consent
   - **Inline Exchange**: Triggered during consent grant when `triggerDataExchange=true` query param is set
   - **Exchange Protocol**: Step-by-step flow — encrypt consent -> POST to provider consentExport -> provider returns dataExchangeId -> provider calls back with token -> forward to consumer consentImport -> consumer verifies token
-  - **Pull Exchange**: `POST /data-exchange/pull` — not implemented (stub returning error)
+  - **Pull Exchange**: `POST /data-exchange/pull` — not implemented (stub returning HTTP 200 with `{ message: "Not implemented, kept for improvements" }`)
 
 - `reimplementation/07-supporting-modules.md` — Covering:
   - **OAuth Module**: Authorization and token endpoints (currently dead code — not mounted); scope definitions (userRead, userWrite, organizationRead, organizationWrite); `validateAccessToken` middleware (unused)
