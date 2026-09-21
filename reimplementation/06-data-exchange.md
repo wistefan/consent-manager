@@ -120,9 +120,9 @@ User / Participant
 1. Read `req.userParticipant.id` from the `verifyParticipantJWT` middleware.
 2. Find the UserIdentifier scoped to the authenticated participant: `UserIdentifier.findOne({ attachedParticipant: req.userParticipant.id, _id: userId })`.
 3. If not found, throw `NotFoundError("User Identifier not found")`.
-4. Resolve `consentId` (ObjectId or identifier string).
-5. Find the consent scoped to the resolved user: `Consent.findOne({ ...query, user: userIdentifier.user })`.
-6. Steps 4-11 are identical to the user-triggered flow above.
+4. Resolve `consentId` (ObjectId or identifier string) -- same as user-triggered step 2.
+5. Find the consent scoped to the resolved user: `Consent.findOne({ ...query, user: userIdentifier.user })` -- same as user-triggered step 3, but uses `userIdentifier.user` instead of the authenticated `userId`.
+6. From here, steps 4-11 of the user-triggered flow above apply unchanged (validate consent, extract participant IDs, fetch participants, build identifiers, validate contract, send consent, return success).
 
 **Response:** `200`
 ```json

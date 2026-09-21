@@ -397,6 +397,7 @@ The system provides cross-participant user identity linking via email matching. 
 4. **If a User exists:**
    - Push both the matched identifier and the new identifier into `user.identifiers` (deduplicating with `Array.includes`).
    - Save the User.
+   > **⚠ Bug:** The `Array.includes` deduplication check suffers from the same ObjectId reference-equality bug as `injectUserIdentifier`. See [Known Bugs](#174-objectid-comparison-in-inject).
 5. **If no User exists:**
    - Create a new `User({ email, identifiers: [matchedId, newId] })` -- this user has **no password, firstName, or lastName**.
    - Save the User.
@@ -511,13 +512,15 @@ The following bugs exist in the original implementation and should be corrected 
 
 **Impact:** If participant A bulk-registers users that overlap with participant B's users by email, those users will not be automatically linked.
 
-### 17.4 ObjectId Comparison in Inject
+### 17.4 ObjectId Comparison in Inject and Federation
 
-**Location:** `src/controllers/usersController.ts` (`injectUserIdentifier` function)
+**Locations:**
+- `src/controllers/usersController.ts` (`injectUserIdentifier` function)
+- `src/utils/UserIdentifierMatchingProcessor.ts` (`checkUserIdentifier` function, line 36)
 
-**Description:** The deduplication check `user.identifiers.includes(new mongoose.Types.ObjectId(userIdentifier))` may produce false negatives. Mongoose ObjectIds are objects, and `Array.includes` uses `===` reference equality, which may fail even when two ObjectIds represent the same value.
+**Description:** The deduplication check `user.identifiers.includes(...)` may produce false negatives in both locations. Mongoose ObjectIds are objects, and `Array.includes` uses `===` reference equality, which may fail even when two ObjectIds represent the same value. In `injectUserIdentifier`, this means duplicate identifiers can be pushed onto a user. In `checkUserIdentifier`, this means cross-participant federation may create duplicate identifier entries during user linking.
 
-**Recommendation:** Use `.toString()` comparison or Mongoose's built-in comparison methods.
+**Recommendation:** Use `.toString()` comparison or Mongoose's built-in comparison methods in both locations.
 
 ### 17.5 Update Returns Stale Data
 

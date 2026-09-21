@@ -605,8 +605,8 @@ app.get("/health", (req, res) => {
 | 5 | `initSession()` | Express-session with MongoDB store |
 | 6 | `morganLogs` | HTTP request logging via Morgan → Winston |
 | 7 | Route handlers | All API routes |
-| 8 | Simulated contract router | Development mock at `/contracts` |
-| 9 | `globalErrorHandler` | Express error handler (mounted last via `loadRoutes`) |
+| 8 | `globalErrorHandler` | Express error handler (mounted last inside `loadRoutes`) |
+| 9 | Simulated contract router | Development mock at `/contracts` (mounted **after** `loadRoutes` returns, in `server.ts`) |
 
 ### 12.3 Route Mounting
 
@@ -623,6 +623,8 @@ app.get("/health", (req, res) => {
 | `/docs` | Swagger UI | None |
 | *(last)* | `globalErrorHandler` | N/A |
 
+> **Note:** The simulated contract router (`/contracts`) is mounted separately in `src/server.ts` **after** `loadRoutes()` returns, placing it after `globalErrorHandler` in the middleware chain. See [Known Bugs](#131-simulated-contract-router-escapes-global-error-handler).
+
 ### 12.4 EJS Views
 
 **Directory:** `src/views/`
@@ -633,7 +635,15 @@ Contains `consent.ejs` -- used by the dead OAuth `/authorize` route to render a 
 
 ## 13. Known Bugs
 
-### 13.1 Error Classes Not Handled
+### 13.1 Simulated Contract Router Escapes Global Error Handler
+
+**Location:** `src/server.ts` (line 52) and `src/routes/index.ts` (line 31)
+
+**Description:** The simulated contract router is mounted in `server.ts` **after** `loadRoutes()` returns, but `globalErrorHandler` is registered as the last middleware **inside** `loadRoutes()`. This means errors thrown by the simulated contract service bypass the global error handler entirely and fall through to Express's default error handler (which returns an HTML stack trace in development).
+
+**Recommendation:** Move the `globalErrorHandler` registration to `server.ts`, after all routers (including the simulated contract router) are mounted, or mount the simulated contract router inside `loadRoutes`.
+
+### 13.2 Error Classes Not Handled
 
 **Location:** `src/middleware/globalErrorHandler.ts`
 
@@ -641,31 +651,31 @@ Contains `consent.ejs` -- used by the dead OAuth `/authorize` route to render a 
 
 **Recommendation:** Add explicit handlers for all custom error classes, or use a common base class with a `statusCode` property.
 
-### 13.2 Nodemailer Error Logging Misattributed
+### 13.3 Nodemailer Error Logging Misattributed
 
 **Location:** `src/libs/emails/nodemailer/classes/NodemailerEmailClient.ts`
 
 **Description:** The error logging location strings reference `"MailchimpEmailClient.sendMessage"` and `"MailchimpEmailClient.sendMessageFromLocalTemplate"` instead of `"NodemailerEmailClient.*"`. This is a copy-paste bug from the Mailchimp implementation.
 
-### 13.3 `generateNewAccessToken` Is an Exact Duplicate
+### 13.4 `generateNewAccessToken` Is an Exact Duplicate
 
 **Location:** `src/libs/OAuth/tokens.ts`
 
 **Description:** The `generateNewAccessToken` function is a character-for-character duplicate of `generateAccessToken`. Both create JWTs with the same payload, same secret, and same expiry. One should be removed.
 
-### 13.4 Simulated Contract Filtering Bug
+### 13.5 Simulated Contract Filtering Bug
 
 **Location:** `src/simulated/contract/router.ts`
 
 **Description:** The `GET /contracts/:providerID/:consumerID` endpoint filters contracts by checking if either the provider or consumer matches a permission's `assignee`. It should check `assigner` for the provider and `assignee` for the consumer.
 
-### 13.5 User JSON-LD URL Hardcodes API Prefix
+### 13.6 User JSON-LD URL Hardcodes API Prefix
 
 **Location:** `src/libs/jsonld/selfDescriptions.ts`
 
 **Description:** The `url` field in the user self-description hardcodes `/v1/users/` instead of reading from `process.env.API_PREFIX`. If the API prefix is changed, the self-description URL will be incorrect.
 
-### 13.6 TLS Disabled in Nodemailer
+### 13.7 TLS Disabled in Nodemailer
 
 **Location:** `src/libs/emails/nodemailer/classes/NodemailerEmailClient.ts`
 
@@ -673,13 +683,13 @@ Contains `consent.ejs` -- used by the dead OAuth `/authorize` route to render a 
 
 **Recommendation:** Make TLS verification configurable via an environment variable, defaulting to `true` in production.
 
-### 13.7 Critical Log Does Not Actually Send Email
+### 13.8 Critical Log Does Not Actually Send Email
 
 **Location:** `src/libs/loggers/Logger.ts` (`critical` method)
 
 **Description:** The `critical` method has a callback that logs `"SEND EMAIL TO ADMIN -- CRITICAL LOG REQUESTED"` to `console.error`, but does not actually send any email. The admin notification is a placeholder.
 
-### 13.8 Empty Mailchimp Templates Registry
+### 13.9 Empty Mailchimp Templates Registry
 
 **Location:** `src/libs/emails/templates/index.ts`
 
