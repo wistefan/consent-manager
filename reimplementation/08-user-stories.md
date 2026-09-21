@@ -379,7 +379,7 @@ documentation where each capability is described in detail.
 2. The consent record is updated with the `dataExchangeId` from the exchange.
 3. If the exchange fails, the consent is still created but the error is logged.
 
-*Ref: Section 3 — Consent Grant Flow (User Key), Section 4 — Inline Exchange*
+*Ref: [03-consent-management.md](./03-consent-management.md) Section 3 — Consent Grant Flow (User Key); [06-data-exchange.md](./06-data-exchange.md) Section 4 — Inline Exchange*
 
 ---
 
@@ -390,9 +390,10 @@ documentation where each capability is described in detail.
 **Story:** As the **System**, I want the consent lifecycle to enforce valid state transitions, so that consents cannot move to invalid states (e.g., revoking an already refused consent).
 
 **Acceptance Criteria:**
-1. Only valid state transitions are allowed: `pending` -> `granted`; `draft` -> `granted`; `granted` -> `revoked`/`terminated`; `pending`/`draft` -> `refused`.
-2. Invalid transition attempts return a clear error message indicating the current state and the attempted transition.
-3. Every state transition is recorded as an event on the consent.
+1. Only valid state transitions are allowed: `pending` -> `granted`; `draft` -> `granted`; `granted` -> `revoked`/`terminated`/`expired`; `pending`/`draft` -> `refused`.
+2. The `expired` state is reserved for system-driven TTL-based expiration (e.g., `granted` -> `expired` when a consent's time-to-live elapses). The transition is triggered by the system, not by a user or participant action.
+3. Invalid transition attempts return a clear error message indicating the current state and the attempted transition.
+4. Every state transition is recorded as an event on the consent.
 
 *Ref: Section 1 — Consent Lifecycle State Machine*
 
@@ -1038,11 +1039,11 @@ documentation where each capability is described in detail.
 
 | Module | Story ID Range | Count | Must-have | Should-have | Could-have |
 |--------|---------------|-------|-----------|-------------|------------|
-| Consent Management | US-CM-001 to US-CM-024 | 24 | 16 | 7 | 1 |
+| Consent Management | US-CM-001 to US-CM-024 | 24 | 17 | 7 | 0 |
 | User Management | US-UM-001 to US-UM-013 | 13 | 6 | 7 | 0 |
 | Participant Management | US-PM-001 to US-PM-009 | 9 | 5 | 4 | 0 |
 | Data Exchange | US-DE-001 to US-DE-006 | 6 | 6 | 0 | 0 |
-| Supporting Modules | US-SM-001 to US-SM-012 | 12 | 6 | 4 | 2 |
+| Supporting Modules | US-SM-001 to US-SM-012 | 12 | 5 | 4 | 3 |
 | **Total** | | **64** | **39** | **22** | **3** |
 
 All 64 user stories cover the complete feature set documented in sections 03 through 07.
