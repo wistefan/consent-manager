@@ -59,24 +59,27 @@ Consents follow a defined state machine with seven possible states. State transi
             |  resumeConsent             | refuseConsent / terminateConsent
             |              |             |
             |              v             v
-            |         +---------+   +---------+   +---------+
-   (new) ---+-------->|  draft  |   | refused |   |terminated|
-            |         +---------+   +---------+   +---------+
-            |              |
-            |  resumeConsent
-            |              |
-            |              v
+            |         +---------+   +---------+   +-----------+
+   (new) ---+-------->|  draft  |-->| refused |   | terminated|
+            |         +---------+   +---------+   +-----------+
+            |          |   |               ^             ^
+            |   resume |   | refuse /      |             |
+            |  Consent |   | terminate     |             |
+            |          v   +---------------+-------------+
             |         +---------+
             +-------->| granted |
-                      +---------+
-                       /    |    \
-          revokeConsent  refuseConsent  terminateConsent
-                     /      |      \
-                    v       v       v
-            +---------+ +---------+ +-----------+
-            | revoked | | refused | | terminated|
-            +---------+ +---------+ +-----------+
+            |         +---------+
+            |          /    |    \
+  event=    | revoke  refuse  terminate
+  "refused" | Consent Consent  Consent
+            |        /      |      \
+            |       v       v       v
+            |  +---------+ +---------+ +-----------+
+            +->| revoked | | refused | | terminated|
+               +---------+ +---------+ +-----------+
 ```
+
+> **Note:** The `(new) → refused` transition occurs when `POST /consents` is called with `event="refused"`. The `draft → refused` and `draft → terminated` transitions use the same `refuseConsent` and `terminateConsent` endpoints as the other states.
 
 ### 1.3 Transitions
 
@@ -243,7 +246,7 @@ POST /consents
   +-- Consumer identifier found? -----> Go to step 8
   |
   v
-6. userInteraction flag is true?
+6. userInteraction flag is false (no user interaction needed)?
   |   |
   |   Yes --> Call userInteraction() helper:
   |           - Create new consumer UserIdentifier
@@ -252,7 +255,7 @@ POST /consents
   |           - Go to step 8
   |
   v
-7. No consumer identifier AND no email provided?
+7. No consumer identifier AND no email AND userInteraction flag is false?
   |   |
   |   Yes --> Call registerNewUserToConsumerSide():
   |           - Create draft/pending consent
@@ -508,7 +511,7 @@ Resumes a pending or draft consent by supplying the consumer-side user identity 
 
 1. Load consent and verify status is `"pending"` or `"draft"`.
 2. Create a new UserIdentifier for the consumer participant:
-   - `attachedParticipant`: the data consumer participant ID from the consent
+   - `attachedParticipant`: `req.userParticipant.id` (the authenticated participant making the request -- expected to be the consumer in practice, but no validation enforces this matches the consent's `dataConsumer`)
    - `email`: from request body
    - `identifier`: `internalID` from request body
 3. Call `checkUserIdentifier()` to reconcile user accounts across participants.
@@ -942,3 +945,25 @@ The following bugs exist in the original implementation and should be corrected 
 **Location:** Top of `src/controllers/consentsController.ts`
 
 **Description:** Both `consentSignature.pem` and `AESKey.pem` are loaded synchronously via `readFileSync` at module import time. If either file does not exist, the entire consent controller module fails to load, taking down all 22 consent routes. There is no graceful fallback or deferred loading.
+
+### 18.8 `resumeConsent` Draft Case Never Persists Before Data Exchange
+
+**Location:** `src/controllers/consentsController.ts` (lines ~1630-1636)
+
+**Description:** In the `resumeConsent` function's `draft` case, `consent.status = "granted"` is set on the in-memory object, but `consent.save()` is never called before `dataExchanges(consentId)` is invoked. The `dataExchanges` function re-reads the consent from MongoDB via `Consent.findById(consentId).lean()`, where the status is still `"draft"`. It then checks `consent.status !== "granted"` and throws `"Consent has not been granted by user"`.
+
+**Impact:** The draft → granted + auto-exchange path always fails at runtime. The consent remains in `"draft"` status.
+
+**Comparison:** The `pending` case in the same function correctly calls `await consent.save()` before returning.
+
+### 18.9 `emailReattached` Falls Through When Both Users Have Passwords
+
+**Location:** `src/controllers/consentsController.ts` (lines ~1904-1949)
+
+**Description:** In the `emailReattached` function, when both `providerUser` and `consumerUser` exist, are different users, and both have passwords, none of the case 2.c sub-cases match:
+- Case 2.c1 checks `providerUser.password && !consumerUser.password` (or the reverse)
+- Case 2.c2 checks `!providerUser.password && !consumerUser.password`
+
+When both have passwords, all three conditions are false. Execution falls through to case 2.d, which checks `!providerUser && !consumerUser` -- also false. The function returns `undefined`, which causes a runtime error when the caller attempts to access `.status` on the result.
+
+**Impact:** Edge case -- only occurs when two independently-registered users (both with passwords) need cross-participant reconciliation. The consent grant flow will crash with a TypeError.
