@@ -145,19 +145,17 @@ Create the following error classes, each extending a base `AppError`:
 | `BadEndpointError` | 502 | External service endpoint failure |
 | `ThirdPartyError` | 502 | External service returned error |
 
-### Global Error Handler
+### Global Error Handler (Stub)
 
-- Handle all 5 custom error classes with their respective HTTP status codes (fixing original bug where only 2 were handled — see Known Issues)
-- Log errors with Winston
-- Return consistent JSON error response format: `{ error: true, message: string }`
-- Suppress stack traces in production
+Create `src/middleware/globalErrorHandler.ts` as a minimal stub that catches errors and returns a generic 500 JSON response. The full implementation (handling all 5 error classes, production stack trace suppression) is owned by TICKET-015.
 
-### Logging Configuration
+### Logging Configuration (Stub)
 
-- Configure Winston with daily-rotate-file transport
-- Configurable max file size and max file count
-- Console transport for development
-- Log levels: error, warn, info, http, debug
+Create `src/libs/loggers/index.ts` as a minimal wrapper around `console` (or a basic Winston instance with console transport only). The full configuration (daily-rotate-file transport, configurable max size/file count, log levels) is owned by TICKET-015.
+
+### Swagger Spec (Skeleton)
+
+Create `docs/swagger.json` as a minimal OpenAPI 3.0 skeleton with the `info` block and an empty `paths` object. The full endpoint documentation is owned by TICKET-015.
 
 ### Docker Configuration
 
@@ -186,8 +184,8 @@ Create the following error classes, each extending a base `AppError`:
 3. [ ] Running `pnpm run dev` starts the Express server and connects to MongoDB
 4. [ ] `GET /health` returns `200 OK` with service status
 5. [ ] `GET /docs` serves Swagger UI with the OpenAPI spec skeleton
-6. [ ] All 5 custom error classes are defined and the global error handler routes each to the correct HTTP status code
-7. [ ] Winston logger writes to console (dev) and rotating files (production)
+6. [ ] All 5 custom error classes are defined and a stub global error handler is mounted (full implementation in TICKET-015)
+7. [ ] A stub Winston logger is available for import (full configuration in TICKET-015)
 8. [ ] `docker-compose up` starts the app and MongoDB with replica set
 9. [ ] Environment variables are loaded from `.env` with sensible defaults
 10. [ ] ESLint and Prettier configurations are in place and `pnpm run lint` passes

@@ -255,6 +255,6 @@ src/types/
 1. **`toReceipt()` references non-existent field** (original bug 18.5): The original `toReceipt()` method references `this.json` which does not exist. Implement the receipt transformation using actual schema fields.
 2. **No unique index on User email** (original bug 17.9): Add a unique index on `User.email` to prevent duplicate registrations.
 3. **`user` field on UserIdentifier unused** (original bug 17.10): The `user` field exists but is never set in the original. In the reimplementation, actively populate this field during user federation (TICKET-006).
-4. **Participant `clientSecret` stored in plaintext** (original bug 12.3): Hash `clientSecret` with bcrypt, similar to User passwords.
-5. **`validatePassword` declared but not implemented on Participant** (original bug 12.7): Implement the method properly if `clientSecret` is hashed, or remove the declaration.
+4. **Participant `clientSecret` stored in plaintext** (original bug 05-PM-12.3): Hash `clientSecret` with bcrypt, similar to User passwords.
+5. **`validatePassword` declared but not implemented on Participant** (original bug 05-PM-12.7): Implement the method properly if `clientSecret` is hashed, or remove the declaration.
 6. **Parent/child consent uses wrong field name** (original bug 18.2): The schema defines `child` (singular ObjectId), but code pushes to `children` (plural array). Decide on one approach and implement consistently — recommend using `child` (singular) since re-grant creates exactly one child.

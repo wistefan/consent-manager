@@ -183,7 +183,7 @@ The full 6-step token protocol:
 
 For each external service call (provider DSC, consumer DSC):
 - Catch HTTP errors and return descriptive error responses
-- Do not suppress consumer error responses (fixing original bug 12.4)
+- Do not suppress consumer error responses (fixing original bug 06-DE-12.4)
 - Log all external service failures
 - Return the actual error status to the caller
 
@@ -212,8 +212,8 @@ src/routes/consent.ts                      # Token routes
 
 ## Known Issues to Address
 
-1. **`sendConsent` is a stub** (original bug 12.1): The standalone `sendConsent` function does nothing useful. Implement proper consent transmission via `triggerDataExchangeByConsentId` for all paths.
-2. **Standalone endpoint participant query bug** (original bug 12.2): The original queries `Participant.findOne({ assignerID })` which uses a non-existent field. Use proper participant lookup by ID or self-description URL.
-3. **Encryption error swallowed** (original bug 12.3): Re-throw encryption errors (handled in TICKET-011).
-4. **Consumer error suppressed** (original bug 12.4): When the POST to consumer's `consentImport` fails, return the actual error to the caller — do not mask it with a 200 success.
-5. **Pull exchange has no authentication** (original bug 12.5): Add appropriate authentication middleware.
+1. **`sendConsent` is a stub** (original bug 06-DE-12.1): The standalone `sendConsent` function does nothing useful. Implement proper consent transmission via `triggerDataExchangeByConsentId` for all paths.
+2. **Standalone endpoint participant query bug** (original bug 06-DE-12.2): The original queries `Participant.findOne({ assignerID })` which uses a non-existent field. Use proper participant lookup by ID or self-description URL.
+3. **Encryption error swallowed** (original bug 06-DE-12.3): Re-throw encryption errors (handled in TICKET-011).
+4. **Consumer error suppressed** (original bug 06-DE-12.4): When the POST to consumer's `consentImport` fails, return the actual error to the caller — do not mask it with a 200 success.
+5. **Pull exchange has no authentication** (original bug 06-DE-12.5): Add appropriate authentication middleware.

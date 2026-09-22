@@ -58,7 +58,7 @@ Tickets are ordered by dependency chain. Critical-path tickets must be completed
 | [TICKET-010](TICKET-010-consent-querying.md) | Consent Querying | High | M | TICKET-008 |
 | [TICKET-017](TICKET-017-pdi-integration.md) | PDI Integration | Medium | S | TICKET-008 |
 
-### Phase 8: Data Exchange (Depends on Phase 7)
+### Phase 8: Data Exchange (Depends on Phase 6)
 
 | Ticket | Title | Priority | Complexity | Dependencies |
 |--------|-------|----------|------------|--------------|
@@ -75,10 +75,10 @@ Tickets are ordered by dependency chain. Critical-path tickets must be completed
 | Metric | Value |
 |--------|-------|
 | Total tickets | 19 |
-| Critical priority | 6 |
-| High priority | 6 |
-| Medium priority | 4 |
-| Low priority | 3 |
+| Critical priority | 7 |
+| High priority | 7 |
+| Medium priority | 3 |
+| Low priority | 2 |
 | Total user stories covered | 64 |
 | Total known bugs to address | 40 |
 | Estimated phases | 9 |

@@ -225,10 +225,10 @@ src/libs/joi/participantSchemas.ts         # Joi validation schemas
 
 ## Known Issues to Address
 
-1. **`getMyParticipant` exposes secrets** (original bug 12.1): Always use field selection to exclude `clientID` and `clientSecret` from responses (except where needed for auth).
-2. **Update `save()` not awaited** (original bug 12.2): Always `await` all database write operations.
-3. **`clientSecret` stored in plaintext** (original bug 12.3): Hash with bcrypt before storage.
-4. **Registration `jsonld` dead code** (original bug 12.4): Generate JSON-LD properly or skip if not needed.
-5. **DSC integration errors not handled** (original bug 12.5): Catch DSC errors gracefully — save the participant regardless, log the DSC failure as a warning.
-6. **No cascade on deletion** (original bug 12.6): When deleting a participant, remove associated UserIdentifiers and consider handling orphaned consents.
-7. **`validatePassword` declared but not implemented** (original bug 12.7): If `clientSecret` is hashed, implement a proper validation method on the Participant model.
+1. **`getMyParticipant` exposes secrets** (original bug 05-PM-12.1): Always use field selection to exclude `clientID` and `clientSecret` from responses (except where needed for auth).
+2. **Update `save()` not awaited** (original bug 05-PM-12.2): Always `await` all database write operations.
+3. **`clientSecret` stored in plaintext** (original bug 05-PM-12.3): Hash with bcrypt before storage.
+4. **Registration `jsonld` dead code** (original bug 05-PM-12.4): Generate JSON-LD properly or skip if not needed.
+5. **DSC integration errors not handled** (original bug 05-PM-12.5): Catch DSC errors gracefully — save the participant regardless, log the DSC failure as a warning.
+6. **No cascade on deletion** (original bug 05-PM-12.6): When deleting a participant, remove associated UserIdentifiers and consider handling orphaned consents.
+7. **`validatePassword` declared but not implemented** (original bug 05-PM-12.7): If `clientSecret` is hashed, implement a proper validation method on the Participant model.

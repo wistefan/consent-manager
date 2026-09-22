@@ -160,5 +160,5 @@ scripts/
 ## Known Issues to Address
 
 1. **Key files loaded at module import** (original bug 18.7): Use lazy loading with descriptive error messages.
-2. **Encryption error swallowed** (original bug 12.3): Re-throw errors after logging. Never return `undefined`.
+2. **Encryption error swallowed** (original bug 06-DE-12.3): Re-throw errors after logging. Never return `undefined`.
 3. **No key rotation support**: Consider adding key versioning or rotation mechanism as a future enhancement (document but do not implement).

@@ -13,7 +13,9 @@
 
 ## Description
 
-Implement the API documentation (Swagger/OpenAPI), health check endpoint, Winston logging configuration, Joi request validation middleware, global error handling, and JSON-LD self-description generation. These are cross-cutting infrastructure concerns that support all other modules.
+Build out the full implementations of API documentation (Swagger/OpenAPI), health check endpoint, Winston logging configuration, Joi request validation middleware, global error handling, and JSON-LD self-description generation. These are cross-cutting infrastructure concerns that support all other modules.
+
+**Relationship to TICKET-001:** TICKET-001 creates the project skeleton including stub files for the global error handler (`src/middleware/globalErrorHandler.ts`), Winston logger (`src/libs/loggers/index.ts`), Swagger spec (`docs/swagger.json`), and the custom error classes (`src/errors/index.ts`). This ticket (TICKET-015) replaces those stubs with full, production-ready implementations. Do not duplicate the error class definitions — those are owned by TICKET-001.
 
 ## Technical Details
 
