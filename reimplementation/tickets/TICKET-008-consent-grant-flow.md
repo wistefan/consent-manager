@@ -8,7 +8,7 @@
 | **Title** | Consent Grant Flow |
 | **Priority** | Critical |
 | **Complexity** | XL (Extra Large) |
-| **Dependencies** | TICKET-003, TICKET-006, TICKET-007, TICKET-011, TICKET-013 |
+| **Dependencies** | TICKET-002, TICKET-003, TICKET-006, TICKET-007, TICKET-011, TICKET-013 |
 | **Related User Stories** | US-CM-003, US-CM-004, US-CM-005, US-CM-020, US-CM-021, US-CM-023, US-CM-024 |
 
 ## Description
@@ -123,6 +123,7 @@ Define valid state transitions:
 | `pending` | `granted` | Email verification completed |
 | `pending` | `refused` | User refuses via email |
 | `draft` | `granted` | User completes consent via resume |
+| `draft` | `refused` | User refuses consent |
 | `granted` | `revoked` | User revokes consent |
 | `granted` | `terminated` | Participant terminates consent |
 | `granted` | `expired` | Consent reaches expiry |

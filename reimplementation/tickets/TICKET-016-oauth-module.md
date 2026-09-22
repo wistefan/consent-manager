@@ -8,7 +8,7 @@
 | **Title** | OAuth Module |
 | **Priority** | Low |
 | **Complexity** | M (Medium) |
-| **Dependencies** | TICKET-003 |
+| **Dependencies** | TICKET-002, TICKET-003 |
 | **Related User Stories** | US-SM-010 |
 
 ## Description

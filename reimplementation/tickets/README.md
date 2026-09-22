@@ -35,7 +35,7 @@ Tickets are ordered by dependency chain. Critical-path tickets must be completed
 | [TICKET-004](TICKET-004-user-management.md) | User Management | Critical | M | TICKET-002, TICKET-003 |
 | [TICKET-005](TICKET-005-participant-management.md) | Participant Management | Critical | M | TICKET-002, TICKET-003 |
 | [TICKET-014](TICKET-014-consent-agent-integration.md) | Consent Agent Integration | Low | M | TICKET-001, TICKET-003 |
-| [TICKET-016](TICKET-016-oauth-module.md) | OAuth Module | Low | M | TICKET-003 |
+| [TICKET-016](TICKET-016-oauth-module.md) | OAuth Module | Low | M | TICKET-002, TICKET-003 |
 
 ### Phase 5: Identity Federation (Depends on Phase 4)
 
@@ -48,7 +48,7 @@ Tickets are ordered by dependency chain. Critical-path tickets must be completed
 
 | Ticket | Title | Priority | Complexity | Dependencies |
 |--------|-------|----------|------------|--------------|
-| [TICKET-008](TICKET-008-consent-grant-flow.md) | Consent Grant Flow | Critical | XL | TICKET-003, TICKET-006, TICKET-007, TICKET-011, TICKET-013 |
+| [TICKET-008](TICKET-008-consent-grant-flow.md) | Consent Grant Flow | Critical | XL | TICKET-002, TICKET-003, TICKET-006, TICKET-007, TICKET-011, TICKET-013 |
 
 ### Phase 7: Consent Extensions (Depends on Phase 6)
 
@@ -80,7 +80,7 @@ Tickets are ordered by dependency chain. Critical-path tickets must be completed
 | Medium priority | 3 |
 | Low priority | 2 |
 | Total user stories covered | 64 |
-| Total known bugs to address | 40 |
+| Total known bugs to address | 40 (deduplicated; some appear in multiple tickets for cross-referencing) |
 | Estimated phases | 9 |
 
 ## Priority Definitions

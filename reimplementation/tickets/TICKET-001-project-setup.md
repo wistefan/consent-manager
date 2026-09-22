@@ -195,7 +195,7 @@ Create `docs/swagger.json` as a minimal OpenAPI 3.0 skeleton with the `info` blo
 
 These bugs from the original codebase should be corrected in the reimplementation:
 
-1. **Global error handler incomplete** (original bug 13.2): The original handler only handles `BadRequestError` (400) and `NotFoundError` (404). The reimplementation must handle all 5 custom error classes.
+1. **Global error handler incomplete** (original bug 13.2): The stub created here only needs to catch errors and return a generic 500. The full implementation handling all 5 custom error classes is owned by TICKET-015.
 2. **Simulated contract router escapes error handler** (original bug 13.1): Ensure all routes — including development-only routes — are mounted before the global error handler.
 3. **User JSON-LD URL hardcodes API prefix** (original bug 13.6): Use `API_PREFIX` from environment configuration throughout, never hardcode `/v1`.
 4. **Key files loaded synchronously at import** (original bug 18.7): Design the key loading to be lazy or async, not synchronous at module import time.
