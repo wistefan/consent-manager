@@ -26,12 +26,13 @@ the scope, and they carried the most combinatorial test burden in the pre-revisi
 | Concern | Tool |
 |---------|------|
 | Framework | JUnit 5, with `junit-jupiter-params` |
+| Runner | Surefire for unit tests, Failsafe for integration tests |
 | Micronaut integration | `micronaut-test-junit5` |
 | Assertions | AssertJ |
 | Database | Testcontainers PostgreSQL 16 |
 | Identity provider | Testcontainers Keycloak |
 | External HTTP | WireMock |
-| Coverage | JaCoCo |
+| Coverage | JaCoCo (`jacoco-maven-plugin`) |
 
 **Real PostgreSQL, not H2 or an in-memory substitute.** The schema relies on partial unique indexes,
 `jsonb`, `timestamptz` and check constraints. A substitute that silently accepts a partial index it
@@ -44,6 +45,17 @@ than the service's behaviour: they cannot exercise OIDC discovery, JWKS caching,
 issuer rejection.
 
 Both containers are started once per suite via a shared singleton, not per test class.
+
+### Surefire and Failsafe
+
+Maven's default conventions split the suite without extra configuration: **Surefire** runs
+`*Test.java` during `test`, **Failsafe** runs `*IT.java` during `integration-test`, after the
+application has been packaged.
+
+The naming below follows this — unit tests end in `Test`, anything needing a container ends in
+`IT`, including the concurrency suites — so
+`./mvnw test` gives the fast feedback loop and `./mvnw verify` gives the full gate. Failsafe also
+runs its `verify` goal after teardown, so a container failing to stop does not mask a test failure.
 
 ### Test Layers
 
@@ -74,8 +86,9 @@ src/test/java/eu/prometheusx/consentmanager/
     NotificationIT.java
     ObservabilityIT.java
   concurrency/
-    ConcurrentRegistrationTest.java
-    ConcurrentRegrantTest.java
+    ConcurrentRegistrationIT.java
+    ConcurrentRegrantIT.java
+    ConcurrentNoticeGenerationIT.java
 ```
 
 ### Parameterized Tests
@@ -175,7 +188,7 @@ src/test/resources/
 
 ## Acceptance Criteria
 
-1. [ ] `./gradlew test` runs the full suite and produces a JaCoCo report
+1. [ ] `./mvnw verify` runs unit and integration tests and produces a JaCoCo report
 2. [ ] Tests run against Testcontainers PostgreSQL 16; no in-memory database substitute is used
 3. [ ] Integration tests authenticate with real tokens from Testcontainers Keycloak
 4. [ ] Containers start once per suite, not per test class

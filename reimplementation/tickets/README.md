@@ -11,9 +11,10 @@ from scope.
 
 ## Cross-Cutting Conventions
 
-**Java only.** The implementation language is Java 21, and that includes build scripts: Gradle's
-Groovy DSL (`build.gradle`), never the Kotlin DSL. No Kotlin source set, plugin, or classpath entry
-anywhere in the project. Code samples in these tickets are illustrative pseudo-code.
+**Java only, and no build language at all.** The implementation language is Java 21. The build is
+**Maven**: `pom.xml` is declarative configuration, not a script, so there is no build DSL to choose,
+no build logic to review, and no second language in the repository. No Gradle, no Kotlin, no Groovy.
+Code samples in these tickets are illustrative.
 
 **The API is specification-first.** `api/openapi.yaml` is authored by hand and reviewed as the
 design artefact; the Java API interfaces and request/response models are generated from it before

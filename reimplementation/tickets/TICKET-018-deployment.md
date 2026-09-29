@@ -22,8 +22,10 @@ Kubernetes, and configuration and secret management.
 
 Multi-stage build:
 
-**Stage 1 — build:** `eclipse-temurin:21-jdk` with the Gradle wrapper, dependencies resolved in a
-cached layer before sources are copied, producing the shadow JAR.
+**Stage 1 — build:** `eclipse-temurin:21-jdk` with the Maven Wrapper. Copy `pom.xml` and run
+`./mvnw dependency:go-offline` first so dependency resolution lands in a cached layer, then copy
+`api/` and `src/` and run `./mvnw package -DskipTests`. Sources change far more often than the
+dependency set, so splitting the two keeps rebuilds fast.
 
 **Stage 2 — runtime:** `eclipse-temurin:21-jre-alpine` or a distroless Java 21 base, carrying only
 the JAR. Runs as a **non-root** user, with a read-only root filesystem and a writable `/tmp`.
@@ -31,7 +33,7 @@ the JAR. Runs as a **non-root** user, with a read-only root filesystem and a wri
 JVM flags: `-XX:MaxRAMPercentage=75 -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError`. The percentage form
 respects the container memory limit, which a fixed `-Xmx` does not.
 
-An optional GraalVM native-image variant behind a Gradle flag gives faster startup and a smaller
+An optional GraalVM native-image variant behind a Maven profile gives faster startup and a smaller
 footprint; it is not required for MVP and must not be the default, since native-image reflection
 configuration is an ongoing maintenance cost.
 

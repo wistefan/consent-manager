@@ -14,7 +14,7 @@
 ## Description
 
 Set up the foundational project structure for the reimplemented Consent Manager on the revised
-technology stack: **Java 21 + Micronaut 4 + PostgreSQL 16**, built with Gradle, schema-managed with
+technology stack: **Java 21 + Micronaut 4 + PostgreSQL 16**, built with Maven, schema-managed with
 Flyway, and tested with JUnit 5 + Testcontainers.
 
 This ticket establishes the baseline that all other tickets build upon. It creates a running,
@@ -24,18 +24,23 @@ health-checkable, database-connected service with no domain logic.
 
 ### Language Constraint
 
-**The implementation language is Java, and only Java.** This covers build scripts as well as
-application and test sources: the build is Gradle's Groovy DSL (`build.gradle`), not the Kotlin DSL
-(`build.gradle.kts`). No Kotlin source set, no Kotlin plugin, no Kotlin on the compile or test
-classpath.
+**The implementation language is Java, and only Java.** No Kotlin source set, no Kotlin plugin, no
+Kotlin on the compile or test classpath.
 
-Any code sample in these tickets is illustrative pseudo-code. Where one is written in a JVM build
-DSL it is Groovy, for the same reason.
+The build is **Maven**, which means the build has no programming language at all: `pom.xml` is
+declarative configuration, not a script. There is no build DSL to pick, no build logic to review,
+and no second language in the repository. Gradle's Groovy and Kotlin DSLs are both out of scope by
+construction.
+
+Any code sample in these tickets is illustrative.
 
 ### Project Initialization
 
-- Generate the project with Micronaut Launch (or equivalent) — **Java 21**, **Gradle (Groovy DSL,
-  `build.gradle`)**, application type `default`.
+- Generate the project with Micronaut Launch (or equivalent) — **Java 21**, **Maven**, application
+  type `default`. Commit the Maven Wrapper (`mvnw`, `.mvn/wrapper`) so the build is reproducible
+  without a local Maven installation.
+- Inherit from the `io.micronaut.platform:micronaut-parent` POM so dependency versions come from the
+  Micronaut BOM rather than being pinned one by one.
 - Package root: `eu.prometheusx.consentmanager`.
 - Enable the annotation processors required by Micronaut Data and Micronaut Validation.
   **Do not** enable the `micronaut-openapi` annotation processor: the API specification is authored
@@ -61,13 +66,21 @@ DSL it is Groovy, for the same reason.
 | `micronaut-email-javamail` | SMTP notification transport |
 | `logback-classic` + `logstash-logback-encoder` | Structured JSON logging |
 
-### Build Plugins
+### Maven Plugins
 
 | Plugin | Purpose |
 |--------|---------|
-| `io.micronaut.application` | Micronaut Gradle plugin |
-| `org.openapitools.generator` | Generates API interfaces and models **from** `api/openapi.yaml` |
-| `com.diffplug.spotless` | Formatting |
+| `micronaut-maven-plugin` | Micronaut build integration, `mn:run`, container packaging |
+| `maven-compiler-plugin` | Java 21, annotation processor paths |
+| `openapi-generator-maven-plugin` | Generates API interfaces and models **from** `api/openapi.yaml` |
+| `maven-surefire-plugin` | Unit tests |
+| `maven-failsafe-plugin` | Integration tests (`*IT.java`) |
+| `jacoco-maven-plugin` | Coverage, with a build-failing threshold |
+| `spotless-maven-plugin` | Formatting |
+
+Annotation processors (Micronaut Data, Micronaut Validation, Micronaut Inject) are declared in
+`maven-compiler-plugin`'s `annotationProcessorPaths` rather than as ordinary dependencies, so they
+stay off the runtime classpath.
 
 ### API-First Code Generation
 
@@ -75,31 +88,45 @@ The OpenAPI document at `api/openapi.yaml` is the authored source of truth. The 
 Java API interfaces and model classes from it with the OpenAPI Generator
 (`java-micronaut-server` generator) before compilation.
 
-```groovy
-openApiGenerate {
-    generatorName = 'java-micronaut-server'
-    inputSpec     = "$rootDir/api/openapi.yaml"
-    outputDir     = "$buildDir/generated/openapi"
-    apiPackage    = 'eu.prometheusx.consentmanager.api.generated'
-    modelPackage  = 'eu.prometheusx.consentmanager.api.generated.model'
-    configOptions = [
-        useBeanValidation             : 'true',
-        serializationLibrary          : 'micronaut_serde_jackson',
-        generateControllerFromExamples: 'false',
-    ]
-}
-
-compileJava.dependsOn tasks.openApiGenerate
-sourceSets.main.java.srcDir "$buildDir/generated/openapi/src/main/java"
+```xml
+<plugin>
+  <groupId>org.openapitools</groupId>
+  <artifactId>openapi-generator-maven-plugin</artifactId>
+  <version>${openapi.generator.version}</version>
+  <executions>
+    <execution>
+      <goals><goal>generate</goal></goals>
+      <configuration>
+        <generatorName>java-micronaut-server</generatorName>
+        <inputSpec>${project.basedir}/api/openapi.yaml</inputSpec>
+        <output>${project.build.directory}/generated-sources/openapi</output>
+        <apiPackage>eu.prometheusx.consentmanager.api.generated</apiPackage>
+        <modelPackage>eu.prometheusx.consentmanager.api.generated.model</modelPackage>
+        <configOptions>
+          <useBeanValidation>true</useBeanValidation>
+          <serializationLibrary>micronaut_serde_jackson</serializationLibrary>
+          <generateControllerFromExamples>false</generateControllerFromExamples>
+        </configOptions>
+      </configuration>
+    </execution>
+  </executions>
+</plugin>
 ```
+
+The execution binds to `generate-sources`, which runs before `compile` in the default lifecycle —
+the ordering is a property of the lifecycle rather than something the build has to declare. The
+plugin registers its output directory as a compile source root itself, so no `build-helper` step is
+needed.
 
 Rules:
 
-- Generated sources live under `build/` and are **never committed**. Committing them creates a
-  second source of truth that can be edited, which is exactly what this arrangement prevents.
-- The generator version and every `configOptions` key is **pinned**. Generator upgrades change
-  output shape, so the upgrade is a reviewed change, not something a fresh checkout picks up. Verify
-  the option names against the pinned generator version — they vary between releases.
+- Generated sources live under `target/generated-sources/` and are **never committed**. Committing
+  them creates a second source of truth that can be edited, which is exactly what this arrangement
+  prevents.
+- The generator version and every `configOptions` key is **pinned** via a `${openapi.generator.version}`
+  property. Generator upgrades change output shape, so the upgrade is a reviewed change, not
+  something a fresh checkout picks up. Verify the option names against the pinned generator version
+  — they vary between releases.
 - Hand-written controllers **implement** the generated interfaces. Adding an operation to the spec
   breaks the build until someone implements it.
 - DTOs are generated. No ticket hand-writes a request or response class; the schema files listed in
@@ -205,39 +232,41 @@ filter so requests can be traced across log lines.
 
 ### Docker and Compose
 
-- Multi-stage `Dockerfile`: Gradle build stage, then a distroless or `eclipse-temurin:21-jre-alpine`
-  runtime stage carrying only the shadow JAR.
+- Multi-stage `Dockerfile`: Maven build stage, then a distroless or `eclipse-temurin:21-jre-alpine`
+  runtime stage carrying only the packaged JAR.
 - `compose.yaml` starts the application plus a plain `postgres:16` container. **No replica set, no
   initialisation script** — the session store that required one is gone.
-- Optionally add a GraalVM native-image build variant behind a Gradle flag; not required for MVP.
+- Optionally add a GraalVM native-image variant via a Maven profile; not required for MVP.
 
-### Gradle Tasks
+### Maven Commands
 
-| Task | Purpose |
-|------|---------|
-| `./gradlew build` | Compile, run tests, assemble |
-| `./gradlew run` | Run locally with the `dev` environment |
-| `./gradlew test` | Run the test suite |
-| `./gradlew spotlessApply` | Format sources |
-| `./gradlew dockerBuild` | Build the container image |
+| Command | Purpose |
+|---------|---------|
+| `./mvnw verify` | Generate, compile, run unit and integration tests, package |
+| `./mvnw mn:run` | Run locally with the `dev` environment |
+| `./mvnw test` | Unit tests only (Surefire) |
+| `./mvnw verify -DskipUTs` | Integration tests only (Failsafe) |
+| `./mvnw spotless:apply` | Format sources |
+| `./mvnw package -Dpackaging=docker` | Build the container image |
 
 ## Acceptance Criteria
 
-1. [ ] `./gradlew build` completes with no errors and no warnings from the annotation processors
-2. [ ] The build uses Gradle's Groovy DSL; no `.kts` file and no Kotlin plugin exists in the project
-3. [ ] `./gradlew run` starts the service and connects to PostgreSQL
-4. [ ] Flyway runs on startup and reports the schema version (initially empty baseline)
-5. [ ] `GET /health` returns `200 OK` with `UP` status including the datasource health indicator
-6. [ ] `GET /health/readiness` reports `DOWN` while the database is unreachable
-7. [ ] `GET /metrics` exposes Prometheus-format metrics
-8. [ ] `./gradlew openApiGenerate` produces API interfaces and models from `api/openapi.yaml`
-9. [ ] Generated sources are on the compile path and are excluded from version control
-10. [ ] `GET /swagger-ui` serves the authored specification (a minimal document at this stage)
-11. [ ] All four exception types are defined and a stub exception handler is registered
-12. [ ] Logs are emitted as single-line JSON to stdout with a correlation ID field
-13. [ ] `docker compose up` starts the application and PostgreSQL, and the health endpoint passes
-14. [ ] `.env.sample` documents every environment variable the application reads
-15. [ ] A Testcontainers PostgreSQL fixture is available to test classes and a smoke test uses it
+1. [ ] `./mvnw verify` completes with no errors and no warnings from the annotation processors
+2. [ ] The build is Maven; no Gradle file, build DSL, or Kotlin plugin exists in the project
+3. [ ] The Maven Wrapper is committed and the build succeeds without a local Maven installation
+4. [ ] `./mvnw mn:run` starts the service and connects to PostgreSQL
+5. [ ] Flyway runs on startup and reports the schema version (initially empty baseline)
+6. [ ] `GET /health` returns `200 OK` with `UP` status including the datasource health indicator
+7. [ ] `GET /health/readiness` reports `DOWN` while the database is unreachable
+8. [ ] `GET /metrics` exposes Prometheus-format metrics
+9. [ ] `./mvnw generate-sources` produces API interfaces and models from `api/openapi.yaml`
+10. [ ] Generated sources are on the compile path and are excluded from version control
+11. [ ] `GET /swagger-ui` serves the authored specification (a minimal document at this stage)
+12. [ ] All four exception types are defined and a stub exception handler is registered
+13. [ ] Logs are emitted as single-line JSON to stdout with a correlation ID field
+14. [ ] `docker compose up` starts the application and PostgreSQL, and the health endpoint passes
+15. [ ] `.env.sample` documents every environment variable the application reads
+16. [ ] A Testcontainers PostgreSQL fixture is available to test classes and a smoke test uses it
 
 ## Notes on Removed Concerns
 

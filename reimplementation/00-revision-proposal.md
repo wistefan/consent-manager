@@ -61,7 +61,7 @@ Replaces Section 3 of `01-architecture-overview.md`.
 |-----------|---------|--------|
 | Language | TypeScript | **Java 21 (LTS)** |
 | Framework | Express 4.18 | **Micronaut 4.x** |
-| Build | pnpm + tsc | **Gradle (Groovy DSL)** — Java only, no Kotlin anywhere, build scripts included |
+| Build | pnpm + tsc | **Maven** — a declarative POM, so the build carries no scripting language; Java is the only language in the repository |
 | Database | MongoDB 7 (replica set) | **PostgreSQL 16** |
 | Data access | Mongoose 7.3 | **Micronaut Data JDBC** |
 | Schema management | implicit (schemaless) | **Flyway** versioned migrations |
@@ -438,7 +438,7 @@ All removed: US-DE-001 … US-DE-006. Document 06 deleted, ticket 012 deleted.
 
 | Ticket | Action | Note |
 |--------|--------|------|
-| 001 Project Setup | **Rewrite** | Gradle, Micronaut 4, Java 21, PostgreSQL + Flyway, Testcontainers, Logback JSON, OpenAPI Generator (API-first). |
+| 001 Project Setup | **Rewrite** | Maven, Micronaut 4, Java 21, PostgreSQL + Flyway, Testcontainers, Logback JSON, OpenAPI Generator (API-first). |
 | 002 Data Models | **Rewrite** | Entities + `V1__init.sql` migration + repositories. |
 | 003 Auth Middleware | **Rewrite → "Identity & Access"** | Absorbs ticket 016. Covers US-ID-001…009, US-UM-002, US-PM-002, US-SM-010. Critical path. |
 | 004 User Management | **Rewrite** | Absorbs ticket 006. |
