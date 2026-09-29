@@ -157,12 +157,19 @@ itself, so an unreachable Contract Service there returns `502` via `UpstreamServ
 ```
 src/main/java/eu/prometheusx/consentmanager/
   api/PrivacyNoticeController.java
-  api/dto/PrivacyNoticeResponse.java
-  api/dto/GeneratePrivacyNoticeRequest.java
   service/PrivacyNoticeService.java
   service/ContractContentExtractor.java
   client/ContractServiceClient.java
   client/dto/ContractResponse.java
+```
+
+**Authored in the API specification, not hand-written** (TICKET-015): the request and response
+models below are generated from these schemas. Controllers implement the generated interfaces.
+
+```
+api/components/schemas/PrivacyNotice.yaml
+api/components/schemas/GeneratePrivacyNotice.yaml
+api/paths/privacy-notices.yaml
 ```
 
 ## Acceptance Criteria

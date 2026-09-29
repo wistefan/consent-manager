@@ -140,12 +140,20 @@ The chain is walked from the newest consent backwards. TICKET-010 exposes it wit
 src/main/java/eu/prometheusx/consentmanager/
   api/ConsentController.java              # grant, refuse
   api/ConsentRequestController.java       # participant consent requests
-  api/dto/GrantConsentRequest.java
-  api/dto/ConsentRequestRequest.java
-  api/dto/ConsentResponse.java
   service/ConsentService.java
   service/ConsentStateMachine.java        # the single transition guard
   service/ConsentFactory.java             # status + consented set together
+```
+
+**Authored in the API specification, not hand-written** (TICKET-015): the request and response
+models below are generated from these schemas. Controllers implement the generated interfaces.
+
+```
+api/components/schemas/GrantConsent.yaml
+api/components/schemas/ConsentRequest.yaml
+api/components/schemas/Consent.yaml
+api/paths/consents.yaml
+api/paths/consent-requests.yaml
 ```
 
 ## Acceptance Criteria

@@ -148,11 +148,18 @@ on a seeded dataset.
 src/main/java/eu/prometheusx/consentmanager/
   api/ConsentQueryController.java
   api/ContractDiscoveryController.java
-  api/dto/ConsentResponse.java
-  api/dto/ConsentValidityResponse.java
-  api/dto/AvailableContractResponse.java
   service/ConsentQueryService.java
   service/ConsentReceiptService.java       # ISO/IEC 29184 and Kantara rendering
+```
+
+**Authored in the API specification, not hand-written** (TICKET-015): the request and response
+models below are generated from these schemas. Controllers implement the generated interfaces.
+
+```
+api/components/schemas/ConsentValidity.yaml
+api/components/schemas/AvailableContract.yaml
+api/components/parameters/pagination.yaml
+api/paths/contracts.yaml
 ```
 
 ## Acceptance Criteria

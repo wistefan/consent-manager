@@ -9,6 +9,16 @@ These tickets reflect the scope and technology revision recorded in
 authentication delegated to an external OIDC provider, and data exchange and user federation removed
 from scope.
 
+## Cross-Cutting Conventions
+
+**The API is specification-first.** `api/openapi.yaml` is authored by hand and reviewed as the
+design artefact; the Java API interfaces and request/response models are generated from it before
+compilation, and controllers implement the generated interfaces. No ticket hand-writes a DTO, and
+where a ticket lists `api/components/schemas/*.yaml` those are the authored source for what later
+becomes generated Java. Validation constraints and the RFC 7807 error contract are declared once, in
+the schema. TICKET-015 owns the specification's structure, linting and serving; TICKET-001 owns the
+generation step.
+
 ## Execution Order
 
 Tickets at the same phase can be parallelised. TICKET-003 is the critical path — nothing downstream
@@ -109,6 +119,13 @@ can be built or tested without it.
 | TICKET-020 — Participant Consent Notifications | Removing data exchange removed the enforcement point. A revocation nobody is told about is not an effective revocation, so consent state changes are pushed to the bound participants over a transactional outbox. |
 
 ### Rescoped
+
+- **API-first code generation adopted** across the set (decision D7). The pre-revision plan
+  maintained `docs/swagger.json` by hand alongside the code; an earlier draft of this revision
+  proposed deriving the spec from annotations. Neither holds: the specification is authored and the
+  code generated from it, which makes the contract reviewable before implementation and makes drift
+  a compile error rather than a review obligation.
+
 
 - **TICKET-010 (Consent Querying) promoted to Critical.** With the service out of the data path, the
   query API is the sole control point by which a participant establishes whether processing is

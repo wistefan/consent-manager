@@ -27,8 +27,9 @@ health-checkable, database-connected service with no domain logic.
 - Generate the project with Micronaut Launch (or equivalent) — **Java 21**, **Gradle (Kotlin DSL)**,
   application type `default`.
 - Package root: `eu.prometheusx.consentmanager`.
-- Enable the annotation processors required by Micronaut Data, Micronaut Validation, and
-  Micronaut OpenAPI.
+- Enable the annotation processors required by Micronaut Data and Micronaut Validation.
+  **Do not** enable the `micronaut-openapi` annotation processor: the API specification is authored
+  by hand and the code is generated from it, not the other way around (TICKET-015).
 - Configure Spotless (or equivalent) with a formatter config, plus Error Prone / NullAway if the
   team wants null-safety enforcement.
 
@@ -47,9 +48,53 @@ health-checkable, database-connected service with no domain logic.
 | `micronaut-cache-caffeine` | Contract and JWKS response caching |
 | `micronaut-management` | Health, readiness, metrics endpoints |
 | `micronaut-micrometer-registry-prometheus` | Metrics export |
-| `micronaut-openapi` | OpenAPI spec generation from annotations |
 | `micronaut-email-javamail` | SMTP notification transport |
 | `logback-classic` + `logstash-logback-encoder` | Structured JSON logging |
+
+### Build Plugins
+
+| Plugin | Purpose |
+|--------|---------|
+| `io.micronaut.application` | Micronaut Gradle plugin |
+| `org.openapitools.generator` | Generates API interfaces and models **from** `api/openapi.yaml` |
+| `com.diffplug.spotless` | Formatting |
+
+### API-First Code Generation
+
+The OpenAPI document at `api/openapi.yaml` is the authored source of truth. The build generates
+Java API interfaces and model classes from it with the OpenAPI Generator
+(`java-micronaut-server` generator) before compilation.
+
+```kotlin
+openApiGenerate {
+    generatorName.set("java-micronaut-server")
+    inputSpec.set("$rootDir/api/openapi.yaml")
+    outputDir.set("$buildDir/generated/openapi")
+    apiPackage.set("eu.prometheusx.consentmanager.api.generated")
+    modelPackage.set("eu.prometheusx.consentmanager.api.generated.model")
+    configOptions.set(mapOf(
+        "useBeanValidation" to "true",
+        "serializationLibrary" to "micronaut_serde_jackson",
+        "generateControllerFromExamples" to "false",
+    ))
+}
+tasks.named("compileJava") { dependsOn("openApiGenerate") }
+sourceSets["main"].java.srcDir("$buildDir/generated/openapi/src/main/java")
+```
+
+Rules:
+
+- Generated sources live under `build/` and are **never committed**. Committing them creates a
+  second source of truth that can be edited, which is exactly what this arrangement prevents.
+- The generator version and every `configOptions` key is **pinned**. Generator upgrades change
+  output shape, so the upgrade is a reviewed change, not something a fresh checkout picks up. Verify
+  the option names against the pinned generator version — they vary between releases.
+- Hand-written controllers **implement** the generated interfaces. Adding an operation to the spec
+  breaks the build until someone implements it.
+- DTOs are generated. No ticket hand-writes a request or response class; the `api/dto/` packages
+  named in later tickets refer to schemas authored in the spec.
+
+TICKET-015 owns the spec's structure, linting, and serving.
 
 ### Test Dependencies
 
@@ -104,8 +149,8 @@ compose.yaml                     # App + PostgreSQL for local development
 - `micronaut.metrics.enabled: true`, Prometheus registry on
 - `endpoints.health.details-visible: ANONYMOUS` only outside production
 
-Health and metrics endpoints are served **outside** the API context path, as are the OpenAPI spec
-and Swagger UI.
+Health and metrics endpoints are served **outside** the API context path, as are the OpenAPI
+document and Swagger UI.
 
 ### Environment Configuration
 
@@ -173,12 +218,14 @@ filter so requests can be traced across log lines.
 4. [ ] `GET /health` returns `200 OK` with `UP` status including the datasource health indicator
 5. [ ] `GET /health/readiness` reports `DOWN` while the database is unreachable
 6. [ ] `GET /metrics` exposes Prometheus-format metrics
-7. [ ] `GET /swagger-ui` serves the generated OpenAPI spec (empty paths at this stage)
-8. [ ] All four exception types are defined and a stub exception handler is registered
-9. [ ] Logs are emitted as single-line JSON to stdout with a correlation ID field
-10. [ ] `docker compose up` starts the application and PostgreSQL, and the health endpoint passes
-11. [ ] `.env.sample` documents every environment variable the application reads
-12. [ ] A Testcontainers PostgreSQL fixture is available to test classes and a smoke test uses it
+7. [ ] `./gradlew openApiGenerate` produces API interfaces and models from `api/openapi.yaml`
+8. [ ] Generated sources are on the compile path and are excluded from version control
+9. [ ] `GET /swagger-ui` serves the authored specification (a minimal document at this stage)
+10. [ ] All four exception types are defined and a stub exception handler is registered
+11. [ ] Logs are emitted as single-line JSON to stdout with a correlation ID field
+12. [ ] `docker compose up` starts the application and PostgreSQL, and the health endpoint passes
+13. [ ] `.env.sample` documents every environment variable the application reads
+14. [ ] A Testcontainers PostgreSQL fixture is available to test classes and a smoke test uses it
 
 ## Notes on Removed Concerns
 
@@ -190,8 +237,9 @@ The following appeared in the pre-revision version of this ticket and are delibe
   is a stateless OAuth2 resource server (TICKET-003).
 - **Joi** — replaced by Jakarta Bean Validation, which is declarative on DTOs.
 - **Winston daily-rotate-file** — replaced by JSON to stdout.
-- **Hand-maintained `docs/swagger.json`** — the spec is now a build artefact (TICKET-015), so it
-  cannot drift from the code.
+- **`swagger-ui-express` serving a `docs/swagger.json` that nothing enforced** — the specification
+  is still hand-authored, but it is now the input the code is generated from rather than a document
+  maintained alongside the code and hoped to match it (TICKET-015).
 - **`API_PREFIX` hardcoding risk** (original bug 13.6) — the prefix is a framework-level context
   path, so no code constructs URLs from a literal `/v1`.
 - **Synchronous key loading at module import** (original bug 18.7) — keys are loaded by an

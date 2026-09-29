@@ -82,8 +82,13 @@ custom `TokenValidator` for the claim and role mapping.
 
 ### 3. Token Contract (US-ID-003)
 
-This is a **deliverable, not an implementation note**. Integrators configure their IDP against it,
-and it is published in the API documentation (TICKET-015).
+This is a **deliverable, not an implementation note**. Integrators configure their IDP against it.
+
+It is authored directly in the API specification, in `api/components/security.yaml`, as
+`securitySchemes` plus a description enumerating every claim below (TICKET-015). Because the
+specification is written first and the code generated from it, the token contract is a design
+artefact reviewed before the identity layer is built — not a description produced afterwards from
+whatever the implementation turned out to require.
 
 #### User Access Token
 
@@ -203,7 +208,8 @@ src/main/java/eu/prometheusx/consentmanager/service/
 15. [ ] Handlers can obtain a typed principal and never read identity from the body or path
 16. [ ] Parameterized tests cover the full matrix of (role × endpoint × expected status)
 17. [ ] Integration tests run against a Testcontainers Keycloak instance with real tokens
-18. [ ] The token contract is published in the generated OpenAPI documentation
+18. [ ] The token contract is authored in `api/components/security.yaml` and published in the API specification
+19. [ ] Every operation's `security` requirement matches the `@Secured` annotation on its implementing controller
 
 ## Replaced Mechanisms
 

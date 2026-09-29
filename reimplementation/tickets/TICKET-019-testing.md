@@ -108,6 +108,20 @@ tests that actually run in parallel:
 
 Each asserts the final database state, not just the response codes.
 
+### Specification Conformance
+
+The generated interfaces pin request and response **signatures** at compile time, so those cannot
+drift. What they do not pin is runtime behaviour: status codes actually returned, response bodies
+actually serialised, and error shapes on failure paths. Those need tests.
+
+1. Every integration test asserts the response against the schema the specification declares for
+   that operation and status, via a response-validating filter active in the test environment.
+2. A test asserts that the document served at `GET /openapi.yaml` is byte-identical to the bundled
+   authored specification.
+3. Spectral lint and the breaking-change check run in CI as build steps, not as advisory reports.
+4. A test asserts every operation declaring a `security` requirement has a correspondingly
+   `@Secured` implementation — the generator does not enforce that pairing.
+
 ### Security Tests
 
 These are not optional extras. With the service out of the data path, authorization is the only
@@ -178,7 +192,11 @@ src/test/resources/
 15. [ ] Flyway migrations are verified against an empty database once per suite
 16. [ ] A log-scanning test finds no token, key material or personal identifier above `DEBUG`
 17. [ ] Branch coverage obligations on the state machine, claim mapping, authorization and signing are met
-18. [ ] The suite is deterministic: ten consecutive runs produce identical results
+18. [ ] Responses are validated against the specification's declared schemas in integration tests
+19. [ ] The served OpenAPI document is byte-identical to the bundled authored specification
+20. [ ] Spectral lint and breaking-change detection run as build steps
+21. [ ] Every operation with a `security` requirement has a matching `@Secured` implementation
+22. [ ] The suite is deterministic: ten consecutive runs produce identical results
 
 ## Changes from the Pre-Revision Ticket
 
@@ -191,3 +209,5 @@ src/test/resources/
 - Security tests made an explicit, enumerated obligation.
 - Data exchange and federation suites removed with their features.
 - Parameterized testing is the default form, per project convention, not an illustrative example.
+- Specification conformance tests added, covering the runtime behaviour that code generation from
+  the authored spec does not pin.

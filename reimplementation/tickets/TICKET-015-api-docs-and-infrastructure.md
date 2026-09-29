@@ -22,24 +22,104 @@ implementations. It does not redefine the exception types.
 
 ## Technical Details
 
-### 1. API Documentation — Generated, Not Maintained
+### 1. API Specification — Authored First, Code Generated From It
 
-`micronaut-openapi` generates the OpenAPI 3.1 specification from controller and DTO annotations at
-**build time**. The spec is an output of compilation, so it cannot drift from the code — the
-pre-revision plan maintained `docs/swagger.json` by hand, which guarantees drift.
+**The OpenAPI document is written by hand and the code is generated from it.** The specification is
+the design artefact and the contract; the Java API interfaces and model classes are its output.
 
-- Spec written to `META-INF/swagger/consent-manager-{version}.yml` during build
-- Served at `GET /swagger/consent-manager-{version}.yml`
-- Swagger UI at `GET /swagger-ui`, outside the API context path
-- A build check fails if a public endpoint lacks `@Operation` documentation
+This is the opposite of the annotation-driven arrangement, and the reason is that the specification
+is the thing integrators build against. Deriving it from whatever the code happens to do makes the
+contract an afterthought — it can only be reviewed after the implementation exists, and every
+implementation detail that leaks into an annotation leaks into the published contract. Authoring it
+first means the contract is reviewable before anyone writes a handler, and the implementation cannot
+quietly diverge from it because it will not compile.
 
-**The token contract (TICKET-003 §3) is published here**, as an `securitySchemes` entry plus a
-description block enumerating every required and optional claim for user and participant tokens.
-Integrators cannot configure their IDP without it, so it belongs in the generated documentation and
-not only in a repository markdown file.
+#### Source Layout
 
-Document per endpoint: required role, the 401-versus-403 distinction, pagination parameters, and the
-error shape.
+```
+api/
+  openapi.yaml                 # root document
+  paths/
+    consents.yaml
+    consent-requests.yaml
+    privacy-notices.yaml
+    users.yaml
+    participants.yaml
+    contracts.yaml
+    notifications.yaml
+  components/
+    schemas/                   # request and response schemas
+    responses/                 # shared error responses
+    parameters/                # pagination, format, filters
+    security.yaml              # securitySchemes, the token contract
+  .spectral.yaml               # lint ruleset
+```
+
+Split by resource with `$ref`, bundled to a single document for publication. A single flat file for
+an API this size becomes unreviewable — a diff touching one endpoint should not land in the middle
+of a two-thousand-line file.
+
+#### Generation
+
+The OpenAPI Generator (`java-micronaut-server`) runs before `compileJava` and produces:
+
+- **API interfaces** — one per tag, with typed parameters and return types
+- **Model classes** — with Jakarta Validation annotations derived from the schema constraints
+
+Controllers are hand-written and `implement` the generated interfaces. Consequences worth stating
+plainly:
+
+- Adding an operation to the spec **breaks the build** until it is implemented.
+- Changing a parameter or response type in the spec **breaks the build** at every affected call
+  site.
+- Removing an operation from the spec leaves an `@Override` that no longer overrides anything —
+  also a build break.
+
+Drift in signatures is therefore not a thing that can be reviewed for, forgotten, or linted. It is a
+compile error.
+
+#### Validation Constraints Come From the Spec
+
+`required`, `minLength`, `maxLength`, `pattern`, `format`, `minimum`/`maximum` and `enum` in the
+schemas generate the corresponding Bean Validation annotations on the model classes. The request
+constraints named in TICKET-004, TICKET-005 and TICKET-008 are authored **once**, in the schema, and
+are simultaneously the documented contract and the enforced rule. They cannot disagree.
+
+Hand-written constraints remain only for rules a JSON Schema cannot express — a purpose being a
+subset of the notice's purposes, for instance. Those live in the service layer, not on the DTO.
+
+#### The Error Contract Is Declared Once
+
+RFC 7807 Problem Details is a shared schema (`components/schemas/ProblemDetail`) with shared
+responses (`components/responses/BadRequest`, `Unauthorized`, `Forbidden`, `NotFound`, `Conflict`,
+`UpstreamError`). Every operation `$ref`s them. An endpoint cannot document an ad-hoc error shape,
+and adding a status to the shared set documents it everywhere at once.
+
+#### The Token Contract Lives in `components/security.yaml`
+
+The token contract from TICKET-003 §3 is authored here as `securitySchemes` plus a description
+enumerating every required and optional claim for user and participant tokens, and the role each
+operation needs. Integrators cannot configure their IDP without it, and this is where they will look
+for it.
+
+Each operation declares its `security` requirement, matching the `@Secured` annotation on the
+implementing controller. The generator does not enforce that pairing, so it is an explicit review
+obligation and is covered by the authorization test matrix in TICKET-019.
+
+#### Linting and Compatibility
+
+- **Spectral** runs in CI against `.spectral.yaml`: every operation has an `operationId`, a summary,
+  a `security` entry and documented error responses; every schema property has a description; naming
+  is consistent. A lint failure fails the build.
+- **Breaking-change detection** (`oasdiff` or equivalent) compares the spec against the last
+  released version. A breaking change requires an explicit acknowledgement in the PR rather than
+  passing silently.
+
+#### Serving
+
+The bundled document is served as a static resource at `GET /openapi.yaml`, with Swagger UI at
+`GET /swagger-ui`, both outside the API context path. What is served is the authored file — not a
+re-derivation of it — so what integrators read is exactly what the code was generated from.
 
 ### 2. Health and Readiness (US-SM-006)
 
@@ -82,14 +162,16 @@ stable hash of it instead.
 
 ### 4. Request Validation
 
-Jakarta Bean Validation on request DTOs — `@NotBlank`, `@Email`, `@Pattern`, `@Size`, `@Valid` on
-nested types. Micronaut validates before the handler runs, so a handler never receives a malformed
-payload.
+Jakarta Bean Validation on request models. The annotations are **generated from the schema
+constraints** in `api/openapi.yaml` (Section 1), not hand-written: `required`, `minLength`,
+`pattern`, `format: email` and `enum` become `@NotNull`, `@Size`, `@Pattern`, `@Email` and a typed
+enum. Micronaut validates before the handler runs, so a handler never receives a malformed payload,
+and the documented constraint and the enforced constraint are the same declaration.
 
-This is why **US-SM-007 no longer exists as a user story**. It described hand-written Joi middleware,
-a work item that only existed because Express has no validation layer. Here it is a framework
-capability plus one exception handler. The requirement survives as acceptance criteria below; the
-story does not.
+This is why **US-SM-007 no longer exists as a user story**. It described hand-written Joi
+middleware, a work item that only existed because Express has no validation layer. Here the
+constraints are authored in the specification and enforced by the framework; what remains is one
+exception handler. The requirement survives as acceptance criteria below; the story does not.
 
 ### 5. Error Handling (US-SM-008) — RFC 7807
 
@@ -156,6 +238,14 @@ consumer) by removing the code that had the bug.
 ### Files to Create
 
 ```
+api/
+  openapi.yaml                           # authored root document
+  paths/*.yaml
+  components/schemas/*.yaml
+  components/responses/*.yaml
+  components/parameters/*.yaml
+  components/security.yaml               # securitySchemes + token contract
+  .spectral.yaml
 src/main/java/eu/prometheusx/consentmanager/
   error/GlobalExceptionHandler.java      # replaces the TICKET-001 stub
   error/ProblemDetail.java
@@ -169,27 +259,40 @@ docker/wiremock/mappings/                # local development contract stubs
 
 ## Acceptance Criteria
 
-1. [ ] The OpenAPI spec is generated at build time and served with Swagger UI
-2. [ ] The build fails if a public endpoint lacks `@Operation` documentation
-3. [ ] The published spec documents the token contract, required roles, and the 401/403 distinction
-4. [ ] `GET /health/liveness` checks the process only and never fails on a dependency outage
-5. [ ] `GET /health/readiness` reports `DOWN` when the database or IDP discovery is unavailable
-6. [ ] Health details are hidden from anonymous callers in production
-7. [ ] `GET /metrics` exposes JVM, HTTP, pool and consent-transition metrics
-8. [ ] Logs are single-line JSON on stdout with a correlation ID on every line
-9. [ ] A test scanning emitted logs finds no token, key material, or personal identifier above DEBUG
-10. [ ] The correlation ID is taken from `X-Request-ID` when present and echoed in the response
-11. [ ] Bean Validation rejects malformed payloads with 400 before the handler runs
-12. [ ] Validation errors list every offending field, not only the first
-13. [ ] Every exception type maps to its documented status; none falls through to 500
-14. [ ] Production 500 responses expose no exception message or stack trace
-15. [ ] Every error response carries the correlation ID
-16. [ ] No simulated or test-only route exists in the production artefact
-17. [ ] Parameterized tests cover the exception-to-status mapping
+1. [ ] `api/openapi.yaml` is the authored source of truth; no code is annotated to produce a spec
+2. [ ] API interfaces and models are generated from the spec before compilation
+3. [ ] Generated sources are never committed and are excluded from version control
+4. [ ] Every controller implements a generated interface
+5. [ ] Adding an operation to the spec fails the build until it is implemented
+6. [ ] Changing a response type in the spec fails the build at every affected call site
+7. [ ] Validation annotations on request models originate from schema constraints, not hand-written code
+8. [ ] All error responses `$ref` the shared `ProblemDetail` schema; no operation declares its own error shape
+9. [ ] The spec documents the token contract, the required role per operation, and the 401/403 distinction
+10. [ ] Spectral lint passes and a violation fails the build
+11. [ ] A breaking spec change is detected and requires explicit acknowledgement
+12. [ ] The bundled spec is served at `GET /openapi.yaml` and rendered at `GET /swagger-ui`
+13. [ ] The served document is byte-identical to the bundled authored spec
+14. [ ] `GET /health/liveness` checks the process only and never fails on a dependency outage
+15. [ ] `GET /health/readiness` reports `DOWN` when the database or IDP discovery is unavailable
+16. [ ] Health details are hidden from anonymous callers in production
+17. [ ] `GET /metrics` exposes JVM, HTTP, pool and consent-transition metrics
+18. [ ] Logs are single-line JSON on stdout with a correlation ID on every line
+19. [ ] A test scanning emitted logs finds no token, key material, or personal identifier above DEBUG
+20. [ ] The correlation ID is taken from `X-Request-ID` when present and echoed in the response
+21. [ ] Bean Validation rejects malformed payloads with 400 before the handler runs
+22. [ ] Validation errors list every offending field, not only the first
+23. [ ] Every exception type maps to its documented status; none falls through to 500
+24. [ ] Production 500 responses expose no exception message or stack trace
+25. [ ] Every error response carries the correlation ID
+26. [ ] No simulated or test-only route exists in the production artefact
+27. [ ] Parameterized tests cover the exception-to-status mapping
 
 ## Changes from the Pre-Revision Ticket
 
-- OpenAPI spec generated at build time, replacing a hand-maintained `swagger.json`.
+- **API-first**: the OpenAPI document is authored and the code generated from it, replacing both
+  the pre-revision hand-maintained `swagger.json` and the annotation-derived spec proposed earlier
+  in this revision.
+- Validation constraints and the error contract are declared once, in the schema.
 - Liveness and readiness split; readiness includes IDP availability.
 - Winston with daily-rotate-file replaced by Logback JSON to stdout.
 - Joi validation middleware replaced by Bean Validation; **US-SM-007 removed as a story**.

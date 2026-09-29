@@ -216,12 +216,19 @@ separate query.
 src/main/java/eu/prometheusx/consentmanager/
   api/UserController.java
   api/ParticipantUserController.java       # /participants/me/users/*
-  api/dto/UserResponse.java
-  api/dto/UserRegistrationRequest.java
-  api/dto/BulkUserRegistrationRequest.java
-  api/dto/BulkRegistrationResult.java
-  api/dto/UserSearchRequest.java
   service/UserService.java
+```
+
+**Authored in the API specification, not hand-written** (TICKET-015): the request and response
+models below are generated from these schemas. Controllers implement the generated interfaces.
+
+```
+api/components/schemas/User.yaml
+api/components/schemas/UserRegistration.yaml
+api/components/schemas/BulkUserRegistration.yaml
+api/components/schemas/BulkRegistrationResult.yaml
+api/components/schemas/UserSearch.yaml
+api/paths/users.yaml
 ```
 
 ## Acceptance Criteria

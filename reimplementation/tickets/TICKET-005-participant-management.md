@@ -163,10 +163,17 @@ the hand-written Joi middleware and the separate create/update schema files.
 ```
 src/main/java/eu/prometheusx/consentmanager/
   api/ParticipantController.java
-  api/dto/ParticipantResponse.java
-  api/dto/ParticipantRegistrationRequest.java
-  api/dto/ParticipantUpdateRequest.java
   service/ParticipantService.java
+```
+
+**Authored in the API specification, not hand-written** (TICKET-015): the request and response
+models below are generated from these schemas. Controllers implement the generated interfaces.
+
+```
+api/components/schemas/Participant.yaml
+api/components/schemas/ParticipantRegistration.yaml
+api/components/schemas/ParticipantUpdate.yaml
+api/paths/participants.yaml
 ```
 
 ## Acceptance Criteria

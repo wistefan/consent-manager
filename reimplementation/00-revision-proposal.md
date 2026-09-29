@@ -49,6 +49,7 @@ shape the rest of the document.
 | **D4** | `contract-agent` is a Node package and cannot run on the JVM. | **Dropped from scope.** `US-SM-001`, `US-SM-002`, `US-SM-003` and `TICKET-014` are removed. Nothing else in the plan depends on them; recommendations are a separate product concern. |
 | **D5** | Should the user↔participant link carry the participant's own internal ID? | **Yes** — optional `local_identifier` column, stored as a convenience, never used as a lookup key by any other participant. |
 | **D6** | Greenfield, or replacing a live instance with data? | **Greenfield.** No migration ticket. Identifier collisions are an onboarding-policy question for the data space, not a migration concern — see Section 10.2. |
+| **D7** | Is the OpenAPI document generated from the code, or is the code generated from the document? | **API-first.** `api/openapi.yaml` is authored and reviewed as the design artefact; API interfaces and request/response models are generated from it. Controllers implement the generated interfaces, so spec and code cannot diverge without a compile error. The `micronaut-openapi` annotation processor is not used. |
 
 ---
 
@@ -68,7 +69,7 @@ Replaces Section 3 of `01-architecture-overview.md`.
 | Sessions | connect-mongo | **none** — stateless resource server |
 | Validation | Joi middleware | **Jakarta Bean Validation** on DTOs (`@Valid`) |
 | HTTP client | Axios + cache interceptor | **Micronaut declarative `@Client`** + Caffeine cache |
-| API docs | hand-maintained `swagger.json` | **micronaut-openapi**, spec generated from annotations at build time |
+| API contract | hand-maintained `swagger.json`, unenforced | **API-first**: `api/openapi.yaml` authored, Java interfaces and models generated from it (OpenAPI Generator, `java-micronaut-server`) |
 | Logging | Winston + daily-rotate-file | **SLF4J/Logback**, JSON to stdout (12-factor) |
 | Metrics/health | custom `/health` | **micronaut-management** + Micrometer/Prometheus |
 | Email | Mandrill + Nodemailer | **Micronaut Email** (SMTP via Jakarta Mail; provider module optional) |
@@ -80,8 +81,13 @@ Notes:
 
 - Daily-rotate log files are dropped deliberately: in a containerised deployment, log rotation is
   the platform's job and structured stdout is what the platform can index.
-- `micronaut-openapi` inverts the current relationship between code and spec — the spec becomes a
-  build artefact, so it cannot drift. Ticket 015 changes meaning accordingly.
+- The API is **specification-first**: the OpenAPI document is authored and reviewed as the design
+  artefact, and the API interfaces and request/response models are generated from it. Controllers
+  implement the generated interfaces, so an operation added or changed in the spec is a compile
+  error until the code matches. Validation constraints and the RFC 7807 error contract are declared
+  once, in the schema. The `micronaut-openapi` annotation processor is deliberately **not** used —
+  deriving the contract from the code would make it an afterthought and allow implementation detail
+  to leak into what integrators build against. Ticket 015 changes meaning accordingly.
 - Testcontainers gives real PostgreSQL in tests; a Keycloak container covers the IDP integration
   tests. This removes the current need for a MongoDB replica set in CI.
 - Per project convention, tests are written as JUnit 5 `@ParameterizedTest` wherever the same
@@ -302,7 +308,7 @@ valid consent for user U, contract C, right now?" — that is already covered by
 | 7. Error handling | **Keep** — Micronaut `@Error` handlers, RFC 7807 Problem Details recommended over the ad-hoc shape. |
 | 8. JSON-LD self-descriptions | **Drop for users** (there is no signup to generate one at, and identity is external). **Keep for participants** as an opaque stored URI. |
 | 9. Simulated contract service | **Keep** as a test fixture — but move it to WireMock stubs in the test source set rather than a route mounted in the production app. The current arrangement is the cause of documented bug 13.1. |
-| 10. Swagger | **Rewrite** — generated. |
+| 10. Swagger | **Rewrite** — spec authored first, code generated from it. |
 | 11. Health check | **Rewrite** — `micronaut-management`, with a readiness probe that includes the PostgreSQL connection and IDP discovery reachability. |
 | 12. Server setup | Rewrite. |
 
@@ -432,7 +438,7 @@ All removed: US-DE-001 … US-DE-006. Document 06 deleted, ticket 012 deleted.
 
 | Ticket | Action | Note |
 |--------|--------|------|
-| 001 Project Setup | **Rewrite** | Gradle, Micronaut 4, Java 21, PostgreSQL + Flyway, Testcontainers, Logback JSON, micronaut-openapi. |
+| 001 Project Setup | **Rewrite** | Gradle, Micronaut 4, Java 21, PostgreSQL + Flyway, Testcontainers, Logback JSON, OpenAPI Generator (API-first). |
 | 002 Data Models | **Rewrite** | Entities + `V1__init.sql` migration + repositories. |
 | 003 Auth Middleware | **Rewrite → "Identity & Access"** | Absorbs ticket 016. Covers US-ID-001…009, US-UM-002, US-PM-002, US-SM-010. Critical path. |
 | 004 User Management | **Rewrite** | Absorbs ticket 006. |
