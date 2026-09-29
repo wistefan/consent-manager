@@ -61,7 +61,7 @@ Replaces Section 3 of `01-architecture-overview.md`.
 |-----------|---------|--------|
 | Language | TypeScript | **Java 21 (LTS)** |
 | Framework | Express 4.18 | **Micronaut 4.x** |
-| Build | pnpm + tsc | **Gradle (Kotlin DSL)** |
+| Build | pnpm + tsc | **Gradle (Groovy DSL)** — Java only, no Kotlin anywhere, build scripts included |
 | Database | MongoDB 7 (replica set) | **PostgreSQL 16** |
 | Data access | Mongoose 7.3 | **Micronaut Data JDBC** |
 | Schema management | implicit (schemaless) | **Flyway** versioned migrations |

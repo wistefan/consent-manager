@@ -22,10 +22,20 @@ health-checkable, database-connected service with no domain logic.
 
 ## Technical Details
 
+### Language Constraint
+
+**The implementation language is Java, and only Java.** This covers build scripts as well as
+application and test sources: the build is Gradle's Groovy DSL (`build.gradle`), not the Kotlin DSL
+(`build.gradle.kts`). No Kotlin source set, no Kotlin plugin, no Kotlin on the compile or test
+classpath.
+
+Any code sample in these tickets is illustrative pseudo-code. Where one is written in a JVM build
+DSL it is Groovy, for the same reason.
+
 ### Project Initialization
 
-- Generate the project with Micronaut Launch (or equivalent) — **Java 21**, **Gradle (Kotlin DSL)**,
-  application type `default`.
+- Generate the project with Micronaut Launch (or equivalent) — **Java 21**, **Gradle (Groovy DSL,
+  `build.gradle`)**, application type `default`.
 - Package root: `eu.prometheusx.consentmanager`.
 - Enable the annotation processors required by Micronaut Data and Micronaut Validation.
   **Do not** enable the `micronaut-openapi` annotation processor: the API specification is authored
@@ -65,21 +75,22 @@ The OpenAPI document at `api/openapi.yaml` is the authored source of truth. The 
 Java API interfaces and model classes from it with the OpenAPI Generator
 (`java-micronaut-server` generator) before compilation.
 
-```kotlin
+```groovy
 openApiGenerate {
-    generatorName.set("java-micronaut-server")
-    inputSpec.set("$rootDir/api/openapi.yaml")
-    outputDir.set("$buildDir/generated/openapi")
-    apiPackage.set("eu.prometheusx.consentmanager.api.generated")
-    modelPackage.set("eu.prometheusx.consentmanager.api.generated.model")
-    configOptions.set(mapOf(
-        "useBeanValidation" to "true",
-        "serializationLibrary" to "micronaut_serde_jackson",
-        "generateControllerFromExamples" to "false",
-    ))
+    generatorName = 'java-micronaut-server'
+    inputSpec     = "$rootDir/api/openapi.yaml"
+    outputDir     = "$buildDir/generated/openapi"
+    apiPackage    = 'eu.prometheusx.consentmanager.api.generated'
+    modelPackage  = 'eu.prometheusx.consentmanager.api.generated.model'
+    configOptions = [
+        useBeanValidation             : 'true',
+        serializationLibrary          : 'micronaut_serde_jackson',
+        generateControllerFromExamples: 'false',
+    ]
 }
-tasks.named("compileJava") { dependsOn("openApiGenerate") }
-sourceSets["main"].java.srcDir("$buildDir/generated/openapi/src/main/java")
+
+compileJava.dependsOn tasks.openApiGenerate
+sourceSets.main.java.srcDir "$buildDir/generated/openapi/src/main/java"
 ```
 
 Rules:
@@ -91,8 +102,8 @@ Rules:
   the option names against the pinned generator version — they vary between releases.
 - Hand-written controllers **implement** the generated interfaces. Adding an operation to the spec
   breaks the build until someone implements it.
-- DTOs are generated. No ticket hand-writes a request or response class; the `api/dto/` packages
-  named in later tickets refer to schemas authored in the spec.
+- DTOs are generated. No ticket hand-writes a request or response class; the schema files listed in
+  later tickets are the authored source they are generated from.
 
 TICKET-015 owns the spec's structure, linting, and serving.
 
@@ -213,19 +224,20 @@ filter so requests can be traced across log lines.
 ## Acceptance Criteria
 
 1. [ ] `./gradlew build` completes with no errors and no warnings from the annotation processors
-2. [ ] `./gradlew run` starts the service and connects to PostgreSQL
-3. [ ] Flyway runs on startup and reports the schema version (initially empty baseline)
-4. [ ] `GET /health` returns `200 OK` with `UP` status including the datasource health indicator
-5. [ ] `GET /health/readiness` reports `DOWN` while the database is unreachable
-6. [ ] `GET /metrics` exposes Prometheus-format metrics
-7. [ ] `./gradlew openApiGenerate` produces API interfaces and models from `api/openapi.yaml`
-8. [ ] Generated sources are on the compile path and are excluded from version control
-9. [ ] `GET /swagger-ui` serves the authored specification (a minimal document at this stage)
-10. [ ] All four exception types are defined and a stub exception handler is registered
-11. [ ] Logs are emitted as single-line JSON to stdout with a correlation ID field
-12. [ ] `docker compose up` starts the application and PostgreSQL, and the health endpoint passes
-13. [ ] `.env.sample` documents every environment variable the application reads
-14. [ ] A Testcontainers PostgreSQL fixture is available to test classes and a smoke test uses it
+2. [ ] The build uses Gradle's Groovy DSL; no `.kts` file and no Kotlin plugin exists in the project
+3. [ ] `./gradlew run` starts the service and connects to PostgreSQL
+4. [ ] Flyway runs on startup and reports the schema version (initially empty baseline)
+5. [ ] `GET /health` returns `200 OK` with `UP` status including the datasource health indicator
+6. [ ] `GET /health/readiness` reports `DOWN` while the database is unreachable
+7. [ ] `GET /metrics` exposes Prometheus-format metrics
+8. [ ] `./gradlew openApiGenerate` produces API interfaces and models from `api/openapi.yaml`
+9. [ ] Generated sources are on the compile path and are excluded from version control
+10. [ ] `GET /swagger-ui` serves the authored specification (a minimal document at this stage)
+11. [ ] All four exception types are defined and a stub exception handler is registered
+12. [ ] Logs are emitted as single-line JSON to stdout with a correlation ID field
+13. [ ] `docker compose up` starts the application and PostgreSQL, and the health endpoint passes
+14. [ ] `.env.sample` documents every environment variable the application reads
+15. [ ] A Testcontainers PostgreSQL fixture is available to test classes and a smoke test uses it
 
 ## Notes on Removed Concerns
 

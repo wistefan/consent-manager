@@ -11,6 +11,10 @@ from scope.
 
 ## Cross-Cutting Conventions
 
+**Java only.** The implementation language is Java 21, and that includes build scripts: Gradle's
+Groovy DSL (`build.gradle`), never the Kotlin DSL. No Kotlin source set, plugin, or classpath entry
+anywhere in the project. Code samples in these tickets are illustrative pseudo-code.
+
 **The API is specification-first.** `api/openapi.yaml` is authored by hand and reviewed as the
 design artefact; the Java API interfaces and request/response models are generated from it before
 compilation, and controllers implement the generated interfaces. No ticket hand-writes a DTO, and
