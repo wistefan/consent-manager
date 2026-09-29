@@ -6,174 +6,182 @@
 |-------|-------|
 | **Ticket ID** | TICKET-010 |
 | **Title** | Consent Querying |
-| **Priority** | High |
+| **Priority** | Critical |
 | **Complexity** | M (Medium) |
 | **Dependencies** | TICKET-008 |
-| **Related User Stories** | US-CM-011, US-CM-012, US-CM-013, US-CM-015, US-CM-016, US-CM-019 |
+| **Related User Stories** | US-CM-011, US-CM-012, US-CM-013, US-CM-015, US-CM-016, US-CM-019, US-CM-020 |
 
 ## Description
 
-Implement consent listing, retrieval by ID, receipt format transformation, parent/child inclusion, participant-scoped queries, and available exchange discovery endpoints.
+Implement consent listing and retrieval for both data subjects and participants, consent receipt
+generation, lineage traversal, and contract discovery.
+
+**This ticket is promoted from High to Critical.** With data exchange out of scope, the Consent
+Manager is no longer in the path of the transfer and can no longer refuse to forward. The query API
+is now the *sole* control point: it is how a participant answers "may I process this user's data for
+this purpose right now?" If it is wrong, slow, or unavailable, participants have nothing else to
+consult.
 
 ## Technical Details
 
 ### Endpoints
 
-#### 1. List My Consents — `GET /consents/me`
+#### 1. List My Consents — `GET /consents/me` (US-CM-011)
 
-**Auth:** `verifyUserJWT`
+**Auth:** `USER`
 
-**Query Parameters:**
-- `page` (number, default: 1)
-- `limit` (number, default: 20)
-- `status` (string, optional — filter by status)
-- `receipt` (boolean, optional — return in receipt format)
-- `includeChildren` (boolean, optional — include child consents)
+**Query Parameters:** `page`, `size`, `status` (repeatable), `privacyNoticeId`, `format`
+(`full` | `receipt`, default `full`), `includeLineage` (boolean, default `false`)
 
-**Flow:**
-1. Get authenticated user from `req.user`
-2. Build query filter: `{ user: req.user._id }`
-3. If `status` is provided, add to filter
-4. Count matching documents (filtered, not global — fixing original bug)
-5. Fetch paginated results with population of `privacyNotice`, `dataProvider`, `dataConsumer`
-6. If `receipt=true`, transform each consent using `consent.toReceipt()`
-7. If `includeChildren=true`, populate `child` references recursively
-8. Return paginated response
+Returns a `Page<ConsentResponse>` for the caller, resolved from the token. The total count comes
+from the same predicate as the result set — the original counted the entire collection and reported
+it as the user's total (original bug 18.3).
 
-**Response:**
-```json
-{
-  "consents": [...],
-  "totalCount": 42,
-  "page": 1,
-  "limit": 20
-}
-```
+#### 2. Get My Consent — `GET /consents/me/{id}` (US-CM-012)
 
-#### 2. Get My Consent by ID — `GET /consents/me/:id`
+**Auth:** `USER`
 
-**Auth:** `verifyUserJWT`
+404 if unknown or not owned by the caller. Supports `format` and `includeLineage`.
 
-**Flow:**
-1. Find consent by ID
-2. Verify the authenticated user owns this consent
-3. Populate related documents
-4. If `receipt` query param is set, transform to receipt format
-5. If `includeChildren` is set, include child consent chain
-6. Return consent
+#### 3. Query Consents as a Participant — `GET /consents` (US-CM-013)
 
-**Response:** `200 OK` with consent object
+**Auth:** `PARTICIPANT`
 
-#### 3. List Consents as Participant — `GET /consents/participants/:userId/`
+**Query Parameters:** `userIdentifier` (optional), `privacyNoticeId` (optional),
+`status` (repeatable, default `GRANTED`), `page`, `size`
 
-**Auth:** `verifyParticipantJWT`
+**This is the primary integration point of the service.** Results are restricted to consents where
+the caller is provider or consumer — enforced in the query predicate, not by filtering after the
+fact, so there is no window in which another participant's row is loaded.
 
-**Flow:**
-1. Get authenticated participant from `req.participant`
-2. Resolve the `userId` parameter to a User
-3. Build query filter: consents where the participant is provider or consumer AND user matches
-4. Apply pagination
-5. Return filtered consents
+Requesting a `userIdentifier` the caller is not linked to returns an empty page, not 403: a 403
+would let a participant probe which identifiers exist.
 
-**Response:** `200 OK` with paginated consents
+#### 4. Check Consent Validity — `GET /consents/check` (US-CM-013)
 
-#### 4. Get Consent as Participant by ID — `GET /consents/participants/:userId/:id`
+**Auth:** `PARTICIPANT`
 
-**Auth:** `verifyParticipantJWT`
+**Query Parameters:** `userIdentifier` (required), `privacyNoticeId` (required), `purpose`
+(optional)
 
-**Flow:**
-1. Find consent by ID
-2. Verify the authenticated participant is the provider or consumer
-3. Return consent with populated data
-
-**Response:** `200 OK` with consent object
-
-#### 5. Discover Available Exchanges as User — `GET /consents/exchanges/user`
-
-**Auth:** `verifyUserJWT`
-
-**Flow:**
-1. Get authenticated user
-2. Find all participants linked to the user via UserIdentifiers
-3. For each participant, fetch bilateral contracts from Contract Service:
-   - `GET {CONTRACT_SERVICE_URL}/contracts/bilateral?participantId={id}`
-4. Aggregate and deduplicate contracts
-5. Return available exchanges
-
-**Response:** `200 OK` with list of available exchanges
-
-#### 6. Discover Available Exchanges as Participant — `GET /consents/exchanges/:as`
-
-**Auth:** `verifyParticipantJWT`
-
-**Path Parameters:**
-- `:as` — Role: `"provider"` or `"consumer"`
-
-**Flow:**
-1. Get authenticated participant
-2. Fetch bilateral and/or ecosystem contracts based on role:
-   - `GET {CONTRACT_SERVICE_URL}/contracts/bilateral?participantId={id}`
-   - `GET {CONTRACT_SERVICE_URL}/contracts/ecosystem?participantId={id}`
-3. Return available exchanges
-
-**Response:** `200 OK` with list of available exchanges
-
-### Consent Receipt Format (ISO/IEC 29184)
-
-**Method:** `Consent.toReceipt()`
-
-Transform a consent document into an ISO/IEC 29184-compliant receipt:
+A purpose-built, cache-friendly answer to the one question participants actually ask before
+processing:
 
 ```json
 {
-  "version": "KI-CR-v1.1.0",
-  "jurisdiction": "...",
-  "consentTimestamp": "ISO datetime",
-  "collectionMethod": "...",
-  "consentReceiptID": "consent._id",
-  "publicKey": "...",
-  "language": "en",
-  "piiPrincipalId": "user email",
-  "piiControllers": [...],
-  "policyUrl": "...",
-  "services": [...],
-  "sensitive": false,
-  "spiCat": []
+  "valid": true,
+  "consentId": "...",
+  "status": "GRANTED",
+  "grantedAt": "2026-09-29T10:15:00Z",
+  "purposes": [ ... ],
+  "checkedAt": "2026-09-29T14:02:11Z"
 }
 ```
 
-Use actual schema fields — not `this.json` (fixing original bug).
+`valid` is `true` only when a consent for that (user, notice) is `GRANTED` and — if `purpose` is
+supplied — covers that purpose. Every other case returns `valid: false` with the reason, including
+"no consent found", without disclosing whether the user exists.
 
-### Parent/Child Inclusion
+Responses carry `Cache-Control: no-store`. A stale "yes" is the worst possible answer here.
 
-When `includeChildren=true`:
-- For each consent, populate the `child` field
-- If the child also has a `child`, recursively populate (up to a configurable depth limit to prevent infinite loops)
+#### 5. Get Consent as a Participant — `GET /consents/{id}` (US-CM-013)
 
-### Files to Create/Modify
+**Auth:** `PARTICIPANT`
+
+404 unless the caller is provider or consumer on that consent.
+
+#### 6. Discover Available Contracts as a User — `GET /contracts/available` (US-CM-015)
+
+**Auth:** `USER`
+
+Renamed from "available exchanges". The behaviour was always contract discovery; the old name
+implied a data-exchange feature that no longer exists and never described what this does.
+
+Resolves the participants the caller is linked to, fetches bilateral and ecosystem contracts for
+each from the Contract Service, deduplicates, and marks which side the caller's participants are on.
+
+#### 7. Discover Available Contracts as a Participant — `GET /contracts/available/{role}` (US-CM-016)
+
+**Auth:** `PARTICIPANT`
+
+`{role}` is `provider` or `consumer`; any other value is a 400. Returns bilateral and ecosystem
+contracts where the caller participates in that role.
+
+For both discovery endpoints, an unavailable Contract Service returns 502 with no partial list —
+a truncated list of contracts reads as "these are all of them" and would be actively misleading.
+
+### Consent Receipts (US-CM-019, US-CM-020)
+
+`format=receipt` renders the consent as an **ISO/IEC 29184** receipt, with the Kantara KI-CR-v1.1.0
+structure available via `format=receipt-kantara`.
+
+Receipt fields are read from the consent's frozen `snapshot` (TICKET-002), not from the live privacy
+notice. A receipt is a record of what was agreed at the time; re-deriving it from current terms
+would silently rewrite history when a notice is superseded.
+
+Receipts are generated from typed record fields, so the original defect — `toReceipt()` referencing
+a field that did not exist on the schema (original bug 18.5) — is a compile error rather than a
+runtime one.
+
+Each receipt carries a **detached JWS signature** produced by TICKET-011, verifiable against
+`GET /.well-known/jwks.json`. This is what replaces the pre-revision AES+RSA payload encryption:
+that scheme existed to protect consent in transit to Data Space Connectors, and with that transport
+gone, what retains value is proof that a receipt is authentic and unaltered.
+
+### Lineage Traversal (US-CM-021)
+
+`includeLineage=true` walks `parentConsentId` upward from the requested consent, returning the chain
+newest-first. The walk is bounded by a configurable maximum depth (default 20) and by a visited-ID
+set, so a cycle — which the `consents_parent_not_self` check constrains but does not fully prevent
+across multiple rows — terminates rather than hanging the request.
+
+### Performance
+
+Backed by the indexes from TICKET-002: `consents (user_id, status)`, `consents (provider_id)`,
+`consents (consumer_id)`, `consents (privacy_notice_id)`. The validity check must resolve in a
+single indexed lookup. Include a test asserting the query plan does not degrade to a sequential scan
+on a seeded dataset.
+
+### Files to Create
 
 ```
-src/controllers/consentsController.ts  # getUserConsents, getUserConsentById,
-                                        # getParticipantConsents, getAvailableExchanges
-src/routes/consent.ts                  # Querying routes
+src/main/java/eu/prometheusx/consentmanager/
+  api/ConsentQueryController.java
+  api/ContractDiscoveryController.java
+  api/dto/ConsentResponse.java
+  api/dto/ConsentValidityResponse.java
+  api/dto/AvailableContractResponse.java
+  service/ConsentQueryService.java
+  service/ConsentReceiptService.java       # ISO/IEC 29184 and Kantara rendering
 ```
 
 ## Acceptance Criteria
 
-1. [ ] `GET /consents/me` returns paginated consents for the authenticated user
-2. [ ] `GET /consents/me` `totalCount` is filtered to the user's consents (not global)
-3. [ ] `GET /consents/me?receipt=true` returns consents in ISO/IEC 29184 receipt format
-4. [ ] `GET /consents/me?includeChildren=true` includes child consent chain
-5. [ ] `GET /consents/me/:id` returns a single consent owned by the user
-6. [ ] `GET /consents/participants/:userId/` returns consents scoped to the participant
-7. [ ] `GET /consents/participants/:userId/:id` returns a specific consent for the participant
-8. [ ] `GET /consents/exchanges/user` discovers available exchanges for the user
-9. [ ] `GET /consents/exchanges/:as` discovers available exchanges for the participant
-10. [ ] Pagination works correctly with `page` and `limit` parameters
-11. [ ] Integration tests cover all querying endpoints with various filters
+1. [ ] `GET /consents/me` returns a page of the caller's consents with a correctly filtered total
+2. [ ] `GET /consents/me/{id}` returns 404 for a consent owned by another user
+3. [ ] `GET /consents` restricts results in the query predicate, never by post-filtering
+4. [ ] A participant querying an unlinked `userIdentifier` receives an empty page, not 403
+5. [ ] `GET /consents/check` returns `valid: true` only for a `GRANTED` consent
+6. [ ] `GET /consents/check` with a `purpose` outside the consent's scope returns `valid: false`
+7. [ ] `GET /consents/check` reveals nothing about whether an unknown user exists
+8. [ ] Validity responses carry `Cache-Control: no-store`
+9. [ ] `format=receipt` renders a valid ISO/IEC 29184 receipt from the consent snapshot
+10. [ ] `format=receipt-kantara` renders a valid KI-CR-v1.1.0 receipt
+11. [ ] A receipt is unchanged after its privacy notice is archived and regenerated
+12. [ ] Every receipt carries a JWS signature verifiable against the published JWKS
+13. [ ] `includeLineage=true` returns the parent chain newest-first
+14. [ ] Lineage traversal terminates at the configured depth and on a cycle
+15. [ ] `GET /contracts/available/{role}` rejects a role other than `provider` or `consumer` with 400
+16. [ ] An unavailable Contract Service returns 502 from discovery, never a partial list
+17. [ ] Consent and validity queries use an index scan on a seeded dataset
+18. [ ] Parameterized tests cover the (caller role × ownership × expected status) matrix
+19. [ ] Integration tests cover pagination boundaries: empty, single page, exact multiple, partial last page
 
-## Known Issues to Address
+## Changes from the Pre-Revision Ticket
 
-1. **Global count bug** (original bug 18.3): Use the user-filtered query for `totalCount`, not `Consent.countDocuments()` with no filter.
-2. **`toReceipt()` references non-existent field** (original bug 18.5): Implement the receipt transformation using actual schema fields.
-3. **Parent/child recursive depth**: Add a configurable maximum depth to prevent infinite recursion if circular references exist.
+- Promoted to **Critical**; it is now the only consent enforcement surface.
+- Added `GET /consents/check` — the explicit replacement for the removed data-exchange gate.
+- "Available exchanges" renamed to contract discovery.
+- Receipts are rendered from the consent snapshot and signed (JWS), replacing payload encryption.
+- Participant scoping is enforced in the query predicate rather than after loading.
+- Original bugs 18.3 (global count) and 18.5 (receipt field mismatch) resolved by design.

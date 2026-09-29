@@ -4,6 +4,12 @@ This folder contains comprehensive feature documentation of the Prometheus-X Con
 
 ## Document Index
 
+### Revision
+
+| # | Document | Description |
+|---|----------|-------------|
+| 00 | [Revision Proposal](./00-revision-proposal.md) | **Read first.** Scope and technology realignment: Java/Micronaut/PostgreSQL, external OIDC authentication, removal of data exchange and user federation. The [tickets](./tickets/README.md) are revised and current. **Documents 01-08 still describe the pre-revision plan** until the remaining rewrite steps land. |
+
 ### Foundational Documents
 
 | # | Document | Description |

@@ -7,182 +7,158 @@
 | **Ticket ID** | TICKET-009 |
 | **Title** | Consent Lifecycle Operations |
 | **Priority** | High |
-| **Complexity** | L (Large) |
+| **Complexity** | M (Medium) |
 | **Dependencies** | TICKET-008 |
 | **Related User Stories** | US-CM-006, US-CM-007, US-CM-008, US-CM-009, US-CM-010, US-CM-024 |
 
 ## Description
 
-Implement the consent lifecycle operations that manage consent state after it has been granted: revocation, refusal, termination, re-confirmation, and resume. Each operation transitions the consent through the state machine defined in TICKET-008.
+Implement the operations that move a consent through its lifecycle after creation: revocation,
+refusal, termination, re-confirmation and resume. Every one of them goes through the state machine
+from TICKET-008 and appends an event.
+
+Complexity drops from L to M: the data-exchange triggering that these operations carried is gone,
+and with it the ordering hazard it created.
 
 ## Technical Details
 
 ### Endpoints
 
-#### 1. Revoke Consent — `DELETE /consents/:id`
+#### 1. Revoke Consent — `POST /consents/{id}/revoke` (US-CM-006)
 
-**Auth:** `verifyUserJWT`
-
-**Flow:**
-1. Find consent by ID
-2. Verify the authenticated user owns this consent
-3. Validate state transition: must be in `granted` state
-4. Update consent:
-   - `status = "revoked"`
-   - `consented = false`
-   - Add event: `{ eventType: "explicit", eventState: "consent revoked", eventTime: new Date().toISOString() }`
-5. `await consent.save()`
-6. Return updated consent
-
-**Response:** `200 OK` with updated consent
-
-#### 2. Refuse Consent — `POST /consents/:consentId/refuse`
-
-**Auth:** `verifyUserJWT`
+**Auth:** `USER`
 
 **Flow:**
-1. Find consent by ID
-2. Verify the authenticated user owns this consent
-3. Validate state transition: must be in `pending` or `draft` state
-4. Update consent:
-   - `status = "refused"`
-   - `consented = false`
-   - Add refusal event
-5. `await consent.save()` (fixing original missing-await bug)
-6. Return updated consent
+1. Load the consent; 404 if unknown or not owned by the caller.
+2. Guard the transition `GRANTED → REVOKED`; 400 with both states named if invalid.
+3. Set `status = REVOKED`, `consented = false` via the state factory.
+4. Append a `CONSENT_REVOKED` event with the user as `actor`.
+5. Emit a state-change notification (TICKET-020).
 
-**Response:** `200 OK` with updated consent
+**Response:** `200 OK` with the updated consent.
 
-#### 3. Terminate Consent — `POST /consents/:consentId/terminate`
+Revocation is effective immediately in this service's records. **Whether it is effective in
+practice depends on participants being told and acting on it** — hence step 5, and the explicit
+non-goal recorded in the architecture documentation. `DELETE` was the pre-revision verb; `POST
+.../revoke` is used instead because nothing is deleted and the operation is not idempotent in the
+way `DELETE` implies.
 
-**Auth:** `verifyParticipantJWT`
+#### 2. Refuse Consent — `POST /consents/{id}/refuse` (US-CM-007)
 
-**Flow:**
-1. Find consent by ID
-2. Verify the authenticated participant is either the data provider or consumer
-3. Validate state transition: must be in `granted` state
-4. Update consent:
-   - `status = "terminated"`
-   - `consented = false`
-   - Add termination event
-5. `await consent.save()` (fixing original missing-await bug)
-6. Return updated consent
+**Auth:** `USER`
 
-**Response:** `200 OK` with updated consent
+Guards `PENDING → REFUSED` or `DRAFT → REFUSED`. Sets `consented = false`, appends
+`CONSENT_REFUSED`. Refusing an already `GRANTED`, `REVOKED` or `REFUSED` consent is a 400.
 
-#### 4. Re-confirm Consent — `POST /consents/:consentId/re-confirm`
+This is how a user declines a participant's consent request (TICKET-008, US-CM-004).
 
-**Auth:** `verifyUserJWT`
+#### 3. Terminate Consent — `POST /consents/{id}/terminate` (US-CM-008)
+
+**Auth:** `PARTICIPANT`
 
 **Flow:**
-1. Find consent by ID
-2. Verify the authenticated user owns this consent
-3. Validate: consent must be in `granted` state (re-confirmation is an affirmation, not a state change)
-4. Add re-confirmation event:
-   ```json
-   {
-     "eventType": "explicit",
-     "eventState": "consent re-confirmed",
-     "eventTime": "ISO timestamp"
-   }
-   ```
-5. Save consent
-6. Optionally trigger data exchange if `triggerDataExchange=true` query param is set
-7. Return updated consent
+1. Load the consent; 404 if unknown.
+2. Verify the caller is the provider or consumer on that consent; otherwise **403**.
+3. Guard `GRANTED → TERMINATED`.
+4. Append `CONSENT_TERMINATED` with the participant as `actor`.
+5. Notify the user (TICKET-013) — a consent ended by the organization is something the data subject
+   should learn about.
 
-**Response:** `200 OK` with updated consent
+Termination is the organizational counterpart to revocation: the arrangement ends for a reason on
+the participant's side, such as contract expiry. It does not represent the user withdrawing.
 
-#### 5. Resume Consent — `POST /consents/:consentId/resume`
+#### 4. Re-confirm Consent — `POST /consents/{id}/re-confirm` (US-CM-009)
 
-**Auth:** `verifyUserJWT` or `verifyParticipantJWT`
+**Auth:** `USER`
 
-**Request Body:**
+**Flow:**
+1. Load the consent; 404 if unknown or not owned by the caller.
+2. Require `status = GRANTED`; otherwise 400.
+3. Append a `CONSENT_RE_CONFIRMED` event. **The status does not change** — re-confirmation is an
+   affirmation recorded in the audit trail, not a transition.
+
+The pre-revision version took a `triggerDataExchange` query parameter; it is removed, which leaves
+this operation as a pure event append.
+
+#### 5. Resume Consent — `POST /consents/{id}/resume` (US-CM-010)
+
+**Auth:** `USER` or `CATALOG`
+
+**Request Body:** empty for a `USER` caller. For a `CATALOG` caller:
 ```json
-{
-  "email": "string (optional)",
-  "userIdentifier": "string (optional)",
-  "participantSelfDescriptionURL": "string (optional)"
-}
+{ "userIdentifier": "string (required — global identifier)" }
 ```
 
 **Flow:**
-1. Find consent by ID
-2. Validate state: must be in `pending` or `draft` state
-3. **For `pending` state:**
-   - Transition to `granted`
-   - Set `consented = true`
-   - Add grant event
-   - Create/link UserIdentifier from provided data if needed
-   - Save consent
-   - Optionally trigger data exchange
-4. **For `draft` state:**
-   - Transition to `granted`
-   - Set `consented = true`
-   - Add grant event
-   - **Save consent before triggering data exchange** (fixing original bug)
-   - Optionally trigger data exchange
-5. Return updated consent
+1. Load the consent; 404 if unknown.
+2. For a `USER` caller, require ownership. For a `CATALOG` caller, require that `userIdentifier`
+   matches the consent's user.
+3. Guard `PENDING → GRANTED` or `DRAFT → GRANTED`; a consent already `GRANTED`, `REVOKED`,
+   `REFUSED` or `TERMINATED` is a 400.
+4. Apply the same re-grant handling as TICKET-008 step 5: revoke and link any existing `GRANTED`
+   consent for the same (user, privacy notice) in the same transaction.
+5. Set `GRANTED` / `consented = true`, append `CONSENT_RESUMED`.
+6. Sign the receipt (TICKET-011) and emit a state-change notification (TICKET-020).
 
-**Response:** `200 OK` with updated consent
+This is how a user accepts a participant's consent request. The whole operation runs in **one
+transaction** — the pre-revision draft path persisted the status only after triggering a downstream
+action, so the database did not reflect the granted state when that action ran (original bug 18.8).
+With the downstream call gone and the write transactional, the hazard is designed out.
 
-### State Machine Integration
+The pre-revision body also carried `email`, `userIdentifier` and
+`participantSelfDescriptionURL` in order to create a `UserIdentifier` on the fly. There is nothing
+to create: the user already exists and the participant link is managed by TICKET-004.
 
-All lifecycle operations must use the state machine utility from TICKET-008:
+### Shared Concerns
 
-```typescript
-import { validateTransition } from '../utils/consentStateMachine';
+**Ownership and authority are checked on every operation.** The original did not consistently do
+this. `USER` operations require the caller to be the consent's data subject; `PARTICIPANT`
+operations require the caller to be provider or consumer on that consent. Role alone is never
+sufficient.
 
-// Before any state change:
-validateTransition(consent.status, newStatus);
-// Throws BadRequestError if transition is invalid
-```
+**Every operation is transactional**, appending its event and writing the status in the same unit of
+work. The two cannot diverge, which removes the "missing `await` on save" class of defect
+(original bug 18.4) structurally rather than by review discipline.
 
-### Event Logging
+**Events are append-only** and carry `actor` — the identifier of whoever caused the transition. The
+pre-revision event record had no actor field, so the audit trail could not answer who terminated a
+consent.
 
-Every lifecycle operation appends an event to the consent's `event` array:
-
-```typescript
-interface ConsentEvent {
-  eventTime: string;       // ISO 8601 datetime
-  validityDuration: string;
-  eventType: string;       // "explicit"
-  eventState: string;      // Describes what happened
-}
-```
-
-Standard event states:
-- `"consent given"` — Consent granted
-- `"consent revoked"` — User revoked consent
-- `"consent refused"` — User refused consent
-- `"consent terminated"` — Participant terminated consent
-- `"consent re-confirmed"` — User re-confirmed consent
-- `"consent resumed"` — Consent resumed from pending/draft
-
-### Files to Create/Modify
+### Files to Create
 
 ```
-src/controllers/consentsController.ts  # revokeConsent, refuseConsent, terminateConsent,
-                                        # reConfirmConsent, resumeConsent
-src/routes/consent.ts                  # Lifecycle routes
+src/main/java/eu/prometheusx/consentmanager/
+  api/ConsentLifecycleController.java
+  service/ConsentLifecycleService.java
 ```
+
+Both build on `ConsentStateMachine` and `ConsentFactory` from TICKET-008.
 
 ## Acceptance Criteria
 
-1. [ ] `DELETE /consents/:id` revokes a granted consent (sets status to `revoked`, consented to `false`)
-2. [ ] `POST /consents/:consentId/refuse` refuses a pending/draft consent
-3. [ ] `POST /consents/:consentId/terminate` terminates a granted consent (participant-only)
-4. [ ] `POST /consents/:consentId/re-confirm` adds a re-confirmation event to a granted consent
-5. [ ] `POST /consents/:consentId/resume` transitions pending/draft consent to granted
-6. [ ] All operations enforce state machine transitions (invalid transitions return 400)
-7. [ ] All operations append an event to the consent's event array
-8. [ ] Revocation requires the owning user's authentication
-9. [ ] Termination requires an authorized participant (provider or consumer)
-10. [ ] Resume from `draft` saves the consent before triggering data exchange
-11. [ ] All `consent.save()` calls are properly `await`ed
-12. [ ] Integration tests cover each lifecycle operation with valid and invalid state transitions
+1. [ ] `POST /consents/{id}/revoke` moves `GRANTED → REVOKED` and sets `consented = false`
+2. [ ] `POST /consents/{id}/refuse` moves `PENDING`/`DRAFT → REFUSED`
+3. [ ] `POST /consents/{id}/terminate` moves `GRANTED → TERMINATED` for a party to the consent
+4. [ ] `POST /consents/{id}/re-confirm` appends an event and leaves the status unchanged
+5. [ ] `POST /consents/{id}/resume` moves `PENDING`/`DRAFT → GRANTED`
+6. [ ] Resume revokes and links any existing `GRANTED` consent in the same transaction
+7. [ ] Every invalid transition returns 400 naming the current and attempted states
+8. [ ] A user operating on another user's consent receives 404
+9. [ ] A participant terminating a consent it is not party to receives 403
+10. [ ] A `CATALOG` caller must supply a `userIdentifier` matching the consent's user
+11. [ ] Each operation appends exactly one event carrying the acting identity
+12. [ ] Status and event are written in one transaction; neither can persist without the other
+13. [ ] Termination notifies the data subject
+14. [ ] Revocation emits a participant notification
+15. [ ] Parameterized tests cover every (operation × starting state) pair, valid and invalid
+16. [ ] A concurrent revoke and re-grant leaves exactly one `GRANTED` consent
 
-## Known Issues to Address
+## Changes from the Pre-Revision Ticket
 
-1. **Missing `await` on `consent.save()`** (original bugs 18.4): Both `refuseConsent` and `terminateConsent` must `await` the save operation.
-2. **`resumeConsent` draft case doesn't save before data exchange** (original bug 18.8): In the `draft` case, call `await consent.save()` before triggering `dataExchanges(consentId)` so the database reflects the `"granted"` status.
-3. **No ownership verification**: The original code does not always verify that the requesting user/participant owns the consent. Add ownership checks to all operations.
+- `DELETE /consents/{id}` becomes `POST /consents/{id}/revoke`; nothing is deleted.
+- `triggerDataExchange` is removed from re-confirm and resume.
+- Resume no longer creates a `UserIdentifier` from request-body data.
+- `CATALOG` authority replaces the `x-catalog-consent-key` shared secret on resume.
+- Events gain an `actor` field.
+- Original bugs 18.4 (missing `await`) and 18.8 (resume not persisting before the downstream call)
+  are resolved by transactional boundaries and the removal of the downstream call.

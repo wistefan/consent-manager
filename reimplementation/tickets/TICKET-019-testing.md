@@ -7,285 +7,187 @@
 | **Ticket ID** | TICKET-019 |
 | **Title** | Testing |
 | **Priority** | High |
-| **Complexity** | XL (Extra Large) |
+| **Complexity** | L (Large) |
 | **Dependencies** | TICKET-002, TICKET-003 (minimum); all tickets for full coverage |
 | **Related User Stories** | (quality — supports all user stories) |
 
 ## Description
 
-Set up the test infrastructure and create comprehensive test suites covering unit tests, integration tests, and end-to-end API tests for all modules. Testing should begin as soon as data models and authentication middleware are implemented (Phase 3) and grow incrementally as each ticket is completed.
+Establish the test infrastructure and the suites that cover every module. Testing starts as soon as
+the schema and identity layer exist and grows with each ticket.
+
+Complexity drops from XL to L: two entire surfaces — data exchange and identity federation — left
+the scope, and they carried the most combinatorial test burden in the pre-revision plan.
 
 ## Technical Details
 
-### Test Framework Configuration
+### Stack
 
-**Runner:** `ts-mocha` (TypeScript-aware Mocha)
-**Assertions:** `chai` (expect/should syntax)
-**HTTP Testing:** `supertest` (Express endpoint testing)
-**Mocking:** `sinon` (stubs, spies, mocks)
-**HTTP Mocking:** `nock` (mock external HTTP requests)
-**Reporter:** `mochawesome` (HTML test reports)
+| Concern | Tool |
+|---------|------|
+| Framework | JUnit 5, with `junit-jupiter-params` |
+| Micronaut integration | `micronaut-test-junit5` |
+| Assertions | AssertJ |
+| Database | Testcontainers PostgreSQL 16 |
+| Identity provider | Testcontainers Keycloak |
+| External HTTP | WireMock |
+| Coverage | JaCoCo |
 
-**Configuration file:** `.mocharc.yml`
+**Real PostgreSQL, not H2 or an in-memory substitute.** The schema relies on partial unique indexes,
+`jsonb`, `timestamptz` and check constraints. A substitute that silently accepts a partial index it
+does not enforce would let exactly the concurrency defects this design guards against pass the
+suite.
 
-```yaml
-require:
-  - ts-mocha
-spec: src/tests/**/*.test.ts
-timeout: 10000
-reporter: mochawesome
-reporter-options:
-  reportDir: test-reports
-  quiet: true
+**Real Keycloak, not hand-forged tokens.** The identity layer is the security boundary
+(TICKET-003). Tests that mint their own tokens with a test key verify the test's assumptions rather
+than the service's behaviour: they cannot exercise OIDC discovery, JWKS caching, key rotation, or
+issuer rejection.
+
+Both containers are started once per suite via a shared singleton, not per test class.
+
+### Test Layers
+
 ```
-
-### Test Directory Structure
-
-```
-src/tests/
-  setup.ts                          # Global test setup (DB connection, cleanup)
-  fixtures/
-    users.ts                        # Test user data
-    participants.ts                 # Test participant data
-    consents.ts                     # Test consent data
-    privacyNotices.ts               # Test privacy notice data
-    contracts.ts                    # Mock contract service responses
+src/test/java/eu/prometheusx/consentmanager/
+  support/
+    PostgresTestResource.java        # singleton container, schema reset between tests
+    KeycloakTestResource.java        # singleton container, realm import
+    TokenFactory.java                # obtains real tokens per role from Keycloak
+    ContractServiceStubs.java        # WireMock stubs for contract fixtures
+    TestDataFactory.java             # entity builders
   unit/
-    models/
-      consent.test.ts               # Consent model validation, methods
-      user.test.ts                  # User model, password hashing
-      participant.test.ts           # Participant model
-      userIdentifier.test.ts        # UserIdentifier model
-      privacyNotice.test.ts         # PrivacyNotice model
-    middleware/
-      auth.test.ts                  # All 4 auth mechanisms
-      joiValidation.test.ts         # Joi validation middleware
-      errorHandler.test.ts          # Global error handler
-    libs/
-      crypto.test.ts                # Encryption/decryption round-trip
-      jwt.test.ts                   # JWT generation/verification
-      email.test.ts                 # Email service (mocked providers)
-      jsonld.test.ts                # JSON-LD generation
-    utils/
-      checkUserIdentifier.test.ts   # Federation logic
-      consentStateMachine.test.ts   # State machine transitions
+    ConsentStateMachineTest.java
+    ConsentFactoryTest.java
+    ClaimMapperTest.java
+    CanonicalJsonSerializerTest.java
+    ConsentSigningServiceTest.java
+    ConsentReceiptServiceTest.java
+    ContractContentExtractorTest.java
   integration/
-    users.test.ts                   # User API endpoints
-    participants.test.ts            # Participant API endpoints
-    consents.test.ts                # Consent API endpoints
-    dataExchange.test.ts            # Data exchange endpoints
-    privacyNotices.test.ts          # Privacy notice endpoints
-    health.test.ts                  # Health check endpoint
-```
-
-### Test Setup (`setup.ts`)
-
-```typescript
-import mongoose from 'mongoose';
-import { MongoMemoryServer } from 'mongodb-memory-server';
-
-let mongoServer: MongoMemoryServer;
-
-before(async () => {
-  mongoServer = await MongoMemoryServer.create({ instance: { replSet: true } });
-  await mongoose.connect(mongoServer.getUri());
-});
-
-afterEach(async () => {
-  // Clean all collections between tests
-  const collections = mongoose.connection.collections;
-  for (const key in collections) {
-    await collections[key].deleteMany({});
-  }
-});
-
-after(async () => {
-  await mongoose.disconnect();
-  await mongoServer.stop();
-});
-```
-
-### Unit Test Categories
-
-#### Model Tests
-- Schema validation (required fields, enum values, defaults)
-- Pre-save hooks (password hashing on User)
-- Instance methods (`validatePassword`, `isValid`, `toReceipt`)
-- Index uniqueness (User email, Participant clientID)
-
-#### Middleware Tests
-- Each auth mechanism: valid token, expired token, missing token, invalid format
-- Session shortcut paths
-- Joi validation: valid body, missing fields, invalid types
-- Error handler: each error class maps to correct HTTP status
-
-#### Crypto Tests
-- Encryption → decryption round-trip preserves data
-- Different payloads produce different ciphertexts
-- Invalid keys fail gracefully
-- Signing → verification round-trip
-
-#### Utility Tests
-- `checkUserIdentifier`: user found, user not found, multiple users
-- State machine: all valid transitions pass, all invalid transitions throw
-
-### Integration Test Categories
-
-#### User API Tests
-- Signup flow (success, duplicate email, missing fields)
-- Login flow (success, wrong password, non-existent user)
-- Logout flow
-- Profile retrieval
-- Response field selection (no password leak)
-
-#### Participant API Tests
-- Registration (success, duplicate clientID, Joi validation failure)
-- Login (success, invalid credentials)
-- CRUD operations
-- DSC integration (mocked external calls with nock)
-
-#### Consent API Tests
-- Privacy notice generation (mock Contract Service with nock)
-- Consent grant via User Key
-- Consent grant via User JWT
-- Consent lifecycle: revoke, refuse, terminate, re-confirm, resume
-- State machine enforcement (invalid transitions return 400)
-- Consent querying with pagination
-- Parent/child linking
-
-#### Data Exchange Tests
-- Full exchange flow with mocked DSC endpoints
-- Token management (attach, validate)
-- Error handling for failed external calls
-
-### Test Fixtures
-
-Create reusable test data factories:
-
-```typescript
-export function createTestUser(overrides?: Partial<IUser>): IUser {
-  return {
-    firstName: 'Test',
-    lastName: 'User',
-    email: `test-${Date.now()}@example.com`,
-    password: 'TestPassword123!',
-    ...overrides,
-  };
-}
-
-export function createTestParticipant(overrides?: Partial<IParticipant>): IParticipant {
-  return {
-    legalName: 'Test Participant',
-    clientID: `client-${Date.now()}`,
-    clientSecret: 'TestSecret123!',
-    ...overrides,
-  };
-}
-```
-
-### External Service Mocking
-
-Use `nock` to mock all external HTTP calls:
-
-```typescript
-import nock from 'nock';
-
-// Mock Contract Service
-nock('http://contract-service:3001')
-  .get('/contracts/123')
-  .reply(200, mockContractResponse);
-
-// Mock Provider DSC
-nock('http://provider-dsc:8080')
-  .post('/consent/export')
-  .reply(200, { dataExchangeId: 'exchange-123' });
+    IdentityAndAccessIT.java
+    UserManagementIT.java
+    ParticipantManagementIT.java
+    PrivacyNoticeIT.java
+    ConsentGrantIT.java
+    ConsentLifecycleIT.java
+    ConsentQueryIT.java
+    NotificationIT.java
+    ObservabilityIT.java
+  concurrency/
+    ConcurrentRegistrationTest.java
+    ConcurrentRegrantTest.java
 ```
 
 ### Parameterized Tests
 
-Use Mocha's array iteration for parameterized tests:
+Per project convention, anything exercising the same behaviour across multiple inputs is written as
+`@ParameterizedTest`. The obligatory ones:
 
-```typescript
-const invalidTransitions = [
-  { from: 'pending', to: 'revoked' },
-  { from: 'refused', to: 'granted' },
-  { from: 'revoked', to: 'granted' },
-  { from: 'terminated', to: 'granted' },
-];
+| Suite | Matrix |
+|-------|--------|
+| State machine | Every (from-state × to-state) pair — 7 × 7 — asserting exactly the nine valid transitions pass |
+| Authorization | Every (endpoint × role × ownership) triple, asserting 200 / 401 / 403 / 404 |
+| Token validation | Unknown issuer, bad signature, expired, not-yet-valid, wrong audience, `alg: none`, symmetric alg, missing role claim, missing identifier claim |
+| Registration rule | All four entry states — unknown user, known unlinked, known linked, concurrent |
+| Validation | Every constrained DTO field against valid, empty, oversized and malformed input |
+| Receipts | Both formats × signing algorithms × tamper cases |
+| Error mapping | Every exception type to its documented status |
 
-invalidTransitions.forEach(({ from, to }) => {
-  it(`should reject transition from ${from} to ${to}`, () => {
-    expect(() => validateTransition(from, to)).to.throw(BadRequestError);
-  });
-});
-```
+### Concurrency Tests
+
+The design leans on database constraints for correctness under concurrency, so those paths need
+tests that actually run in parallel:
+
+1. **Concurrent user registration** — N threads register the same identifier; exactly one user row
+   results and every caller gets a success response.
+2. **Concurrent re-grant** — two threads grant consent for the same (user, privacy notice); exactly
+   one ends `GRANTED`, the other is rejected or supersedes cleanly, and no state has two active
+   consents.
+3. **Concurrent privacy notice generation** — two threads generate for the same contract and
+   provider; exactly one active notice results.
+
+Each asserts the final database state, not just the response codes.
+
+### Security Tests
+
+These are not optional extras. With the service out of the data path, authorization is the only
+control it has:
+
+1. A participant cannot read, terminate or query a consent it is not party to.
+2. A participant cannot read a user it is not linked to, and gets 404 rather than 403 so it cannot
+   probe for existence.
+3. A user cannot read or act on another user's consent.
+4. No endpoint accepts an identity supplied in the body, path or query in place of the token.
+5. A token valid for one issuer is rejected when presented with another issuer's `kid`.
+6. Signing-key rotation at the IDP is picked up without a restart.
+7. A repeated unknown `kid` does not cause unbounded JWKS refetching.
+8. Emitted logs contain no token, key material, or personal identifier above `DEBUG`.
+
+### External Service Stubbing
+
+All Contract Service interaction is stubbed with WireMock. **No test makes a real outbound network
+call**, and no test-only route exists in the application (TICKET-015).
+
+Stub fixtures cover: a well-formed bilateral contract, a well-formed ecosystem contract, a contract
+with missing optional sections, an unresolvable service offering reference, a 500 response, and a
+timeout.
+
+### Test Isolation
+
+Schema state is reset between test methods by truncating all tables in FK-safe order and restarting
+sequences — faster and more reliable than recreating the schema, and it keeps the Flyway migration
+verified once per suite rather than per test.
+
+WireMock stubs are reset after every test. Keycloak state is shared read-only; tests that need a
+distinct user or client create one with a unique name rather than mutating the imported realm.
+
+### Coverage
+
+JaCoCo with a build-failing threshold. Line coverage is a weak signal on its own, so the gate is
+paired with named obligations: the state machine, claim mapping, authorization checks and the
+signing path each require branch coverage, and a missing branch there fails the build regardless of
+the overall percentage.
 
 ### Files to Create
 
-```
-src/tests/
-  setup.ts
-  fixtures/
-    users.ts
-    participants.ts
-    consents.ts
-    privacyNotices.ts
-    contracts.ts
-  unit/
-    models/consent.test.ts
-    models/user.test.ts
-    models/participant.test.ts
-    models/userIdentifier.test.ts
-    models/privacyNotice.test.ts
-    middleware/auth.test.ts
-    middleware/joiValidation.test.ts
-    middleware/errorHandler.test.ts
-    libs/crypto.test.ts
-    libs/jwt.test.ts
-    libs/email.test.ts
-    libs/jsonld.test.ts
-    utils/checkUserIdentifier.test.ts
-    utils/consentStateMachine.test.ts
-  integration/
-    users.test.ts
-    participants.test.ts
-    consents.test.ts
-    dataExchange.test.ts
-    privacyNotices.test.ts
-    health.test.ts
-.mocharc.yml
-```
+As listed under Test Layers, plus:
 
-### Dev Dependencies to Add
-
-| Package | Purpose |
-|---------|---------|
-| `mongodb-memory-server` | In-memory MongoDB for tests |
-| `nock` | HTTP request mocking |
-| `sinon` | Stubs, spies, mocks |
-| `@types/sinon` | Sinon type definitions |
-| `@types/supertest` | Supertest type definitions |
-| `mochawesome` | HTML test reporter |
+```
+src/test/resources/
+  application-test.yml               # points at the Testcontainers instances
+  contracts/*.json                   # contract fixtures
+  logback-test.xml
+```
 
 ## Acceptance Criteria
 
-1. [ ] `pnpm run test` executes all test suites and produces a report
-2. [ ] Test setup creates an in-memory MongoDB replica set
-3. [ ] Database is cleaned between test cases (no test pollution)
-4. [ ] Unit tests cover all 5 model schemas (validation, methods, hooks)
-5. [ ] Unit tests cover all 4 authentication middleware paths
-6. [ ] Unit tests cover encryption/decryption round-trip
-7. [ ] Unit tests cover state machine transitions (valid and invalid)
-8. [ ] Integration tests cover all API endpoints with supertest
-9. [ ] External HTTP calls are mocked with nock (no real network calls in tests)
-10. [ ] Parameterized tests are used for state machine transitions and validation
-11. [ ] Test fixtures provide reusable factory functions
-12. [ ] Test reports are generated in `test-reports/` directory
-13. [ ] All tests pass with zero failures
+1. [ ] `./gradlew test` runs the full suite and produces a JaCoCo report
+2. [ ] Tests run against Testcontainers PostgreSQL 16; no in-memory database substitute is used
+3. [ ] Integration tests authenticate with real tokens from Testcontainers Keycloak
+4. [ ] Containers start once per suite, not per test class
+5. [ ] Schema state is reset between test methods with no cross-test pollution
+6. [ ] No test makes a real outbound network call
+7. [ ] Parameterized tests cover the full 7 × 7 state transition matrix
+8. [ ] Parameterized tests cover the (endpoint × role × ownership) authorization matrix
+9. [ ] Parameterized tests cover the token validation failure matrix
+10. [ ] Concurrent registration of one identifier yields exactly one user row
+11. [ ] Concurrent re-grant yields exactly one `GRANTED` consent
+12. [ ] Concurrent notice generation yields exactly one active notice
+13. [ ] All eight security tests pass
+14. [ ] Signing-key rotation is exercised against a live IDP container
+15. [ ] Flyway migrations are verified against an empty database once per suite
+16. [ ] A log-scanning test finds no token, key material or personal identifier above `DEBUG`
+17. [ ] Branch coverage obligations on the state machine, claim mapping, authorization and signing are met
+18. [ ] The suite is deterministic: ten consecutive runs produce identical results
 
-## Known Issues to Address
+## Changes from the Pre-Revision Ticket
 
-1. **Test isolation**: The original test suite may have test pollution issues. Use `afterEach` cleanup to ensure test isolation.
-2. **MongoDB replica set in tests**: `mongodb-memory-server` with `replSet: true` is required for Mongoose transaction support.
-3. **Nock cleanup**: Always call `nock.cleanAll()` in `afterEach` to prevent cross-test interference.
-4. **Timeouts**: Set appropriate test timeouts (10s for integration tests) to account for in-memory MongoDB startup.
+- Mocha/Chai/Supertest/Sinon/nock replaced by JUnit 5 / Micronaut Test / AssertJ / WireMock.
+- `mongodb-memory-server` replaced by Testcontainers PostgreSQL — a real database, because the
+  design depends on real constraints.
+- Keycloak added: real tokens rather than hand-forged ones.
+- Concurrency tests added, since correctness under concurrency is now enforced by database
+  constraints rather than application checks.
+- Security tests made an explicit, enumerated obligation.
+- Data exchange and federation suites removed with their features.
+- Parameterized testing is the default form, per project convention, not an illustrative example.

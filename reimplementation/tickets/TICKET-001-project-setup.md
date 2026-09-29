@@ -13,189 +13,186 @@
 
 ## Description
 
-Set up the foundational project structure for the reimplemented Consent Manager. This includes the TypeScript/Node.js project scaffold, Express.js server configuration, MongoDB connection with replica set support, Docker development environment, and CI pipeline configuration.
+Set up the foundational project structure for the reimplemented Consent Manager on the revised
+technology stack: **Java 21 + Micronaut 4 + PostgreSQL 16**, built with Gradle, schema-managed with
+Flyway, and tested with JUnit 5 + Testcontainers.
 
-This ticket establishes the baseline that all other tickets build upon.
+This ticket establishes the baseline that all other tickets build upon. It creates a running,
+health-checkable, database-connected service with no domain logic.
 
 ## Technical Details
 
 ### Project Initialization
 
-- Initialize a new Node.js project with `pnpm` as the package manager
-- Configure TypeScript (`tsconfig.json`) with strict mode enabled
-- Set up ESLint and Prettier with the project's coding standards
-- Configure path aliases if needed
+- Generate the project with Micronaut Launch (or equivalent) — **Java 21**, **Gradle (Kotlin DSL)**,
+  application type `default`.
+- Package root: `eu.prometheusx.consentmanager`.
+- Enable the annotation processors required by Micronaut Data, Micronaut Validation, and
+  Micronaut OpenAPI.
+- Configure Spotless (or equivalent) with a formatter config, plus Error Prone / NullAway if the
+  team wants null-safety enforcement.
 
-### Core Dependencies to Install
+### Core Dependencies
 
-| Package | Purpose |
-|---------|---------|
-| `express` (^4.18) | HTTP framework |
-| `mongoose` (^7.3) | MongoDB ODM |
-| `dotenv` | Environment variable loading |
-| `winston` | Logging |
-| `winston-daily-rotate-file` | Log rotation |
-| `cors` | Cross-origin resource sharing |
-| `helmet` | Security headers |
-| `joi` | Request validation |
-| `jsonwebtoken` | JWT auth tokens |
-| `bcryptjs` | Password hashing |
-| `express-session` | Session management |
-| `connect-mongo` | MongoDB session store |
-| `nodemailer` | Email sending |
-| `axios` | HTTP client for external services |
-| `swagger-ui-express` | API documentation UI |
-| `ejs` | Template rendering |
+| Dependency | Purpose |
+|------------|---------|
+| `micronaut-http-server-netty` | HTTP server |
+| `micronaut-data-jdbc` | Repository layer (compile-time generated) |
+| `micronaut-jdbc-hikari` | Connection pool |
+| `postgresql` (JDBC driver) | PostgreSQL connectivity |
+| `micronaut-flyway` | Versioned schema migrations |
+| `micronaut-validation` | Jakarta Bean Validation on DTOs |
+| `micronaut-security-jwt` | OAuth2 resource server, JWKS validation |
+| `micronaut-http-client` | Declarative `@Client` for the Contract Service |
+| `micronaut-cache-caffeine` | Contract and JWKS response caching |
+| `micronaut-management` | Health, readiness, metrics endpoints |
+| `micronaut-micrometer-registry-prometheus` | Metrics export |
+| `micronaut-openapi` | OpenAPI spec generation from annotations |
+| `micronaut-email-javamail` | SMTP notification transport |
+| `logback-classic` + `logstash-logback-encoder` | Structured JSON logging |
 
-### Dev Dependencies
+### Test Dependencies
 
-| Package | Purpose |
-|---------|---------|
-| `typescript` | TypeScript compiler |
-| `ts-node` / `tsx` | TypeScript execution |
-| `nodemon` | Development auto-reload |
-| `mocha` / `ts-mocha` | Test runner |
-| `chai` | Assertion library |
-| `supertest` | HTTP testing |
-| `sinon` | Mocking/stubbing |
-| `nock` | HTTP request mocking |
-| `mochawesome` | Test reporter |
-| `eslint` | Linting |
-| `prettier` | Code formatting |
+| Dependency | Purpose |
+|------------|---------|
+| `micronaut-test-junit5` | Micronaut test integration |
+| `junit-jupiter` (incl. `junit-jupiter-params`) | Test framework and parameterized tests |
+| `assertj-core` | Fluent assertions |
+| `testcontainers` + `testcontainers-postgresql` | Real PostgreSQL per test run |
+| `testcontainers-keycloak` | Real OIDC provider for identity tests |
+| `wiremock` | Contract Service stubbing |
 
-### Directory Structure to Create
+### Package Structure to Create
 
 ```
-src/
-  index.ts              # Entry point
-  server.ts             # Express app setup
+src/main/java/eu/prometheusx/consentmanager/
+  Application.java               # Micronaut entry point
   config/
-    database.ts         # MongoDB connection
-    env.ts              # Environment variable loading with defaults
-  routes/
-    index.ts            # Route loader
-  controllers/          # (empty, created by later tickets)
-  models/               # (empty, created by later tickets)
-  middleware/
-    globalErrorHandler.ts  # Express error handler
-  errors/
-    index.ts            # Custom error classes (BadRequestError, NotFoundError, ForbiddenError, BadEndpointError, ThirdPartyError)
-  libs/
-    loggers/            # Winston logger configuration
-  types/                # TypeScript type definitions
-  utils/                # Helper utilities
+    ConsentManagerConfiguration.java   # @ConfigurationProperties root
+  domain/                        # (empty, created by TICKET-002)
+  repository/                    # (empty, created by TICKET-002)
+  service/                       # (empty, created by later tickets)
+  api/
+    dto/                         # (empty, created by later tickets)
+  error/
+    ApiError.java                # RFC 7807 Problem Details representation
+    BadRequestException.java
+    NotFoundException.java
+    ForbiddenException.java
+    UpstreamServiceException.java
+    GlobalExceptionHandler.java  # stub, full implementation in TICKET-015
+src/main/resources/
+  application.yml                # Base configuration
+  application-dev.yml            # Development overrides
+  logback.xml                    # JSON to stdout
+  db/migration/                  # Flyway migrations (created by TICKET-002)
+src/test/java/eu/prometheusx/consentmanager/
+  support/
+    PostgresTestResource.java    # Testcontainers PostgreSQL fixture
 docker/
-  app/
-    Dockerfile          # Multi-stage build
-  mongodb/
-    Dockerfile          # MongoDB with replica set init
-docs/
-  swagger.json          # OpenAPI 3.0 spec skeleton
+  Dockerfile                     # Multi-stage, distroless JRE runtime
+compose.yaml                     # App + PostgreSQL for local development
 ```
 
-### Express Server Configuration (`server.ts`)
+### Application Configuration (`application.yml`)
 
-- Mount CORS middleware with configurable origin
-- Mount `express.json()` and `express.urlencoded()` body parsers
-- Mount `helmet` for security headers
-- Mount session middleware with MongoDB store
-- Mount route loader at configurable `API_PREFIX` (default: `/v1`)
-- Mount Swagger UI at `/docs`
-- Mount health check at `/health`
-- Mount global error handler (last middleware)
+- `micronaut.application.name: consent-manager`
+- `micronaut.server.port` bound to `PORT`, default `8080`
+- `micronaut.server.context-path` bound to `API_PREFIX`, default `/v1`
+- Datasource bound to `DB_URL`, `DB_USER`, `DB_PASSWORD`
+- `flyway.datasources.default.enabled: true`
+- `micronaut.metrics.enabled: true`, Prometheus registry on
+- `endpoints.health.details-visible: ANONYMOUS` only outside production
 
-### MongoDB Connection (`config/database.ts`)
+Health and metrics endpoints are served **outside** the API context path, as are the OpenAPI spec
+and Swagger UI.
 
-- Connect using `MONGODB_URI` environment variable
-- Support replica set configuration
-- Handle connection events (connected, error, disconnected)
-- Graceful shutdown on process signals (SIGINT, SIGTERM)
-
-### Environment Configuration (`config/env.ts`)
-
-Load and validate all environment variables from `.env` file:
+### Environment Configuration
 
 | Variable | Default | Required | Description |
 |----------|---------|----------|-------------|
-| `PORT` | `3000` | No | Server port |
-| `MONGODB_URI` | — | Yes | MongoDB connection string |
-| `JWT_SECRET_KEY` | — | Yes | JWT signing secret |
-| `OAUTH_SECRET_KEY` | — | Yes | OAuth JWT signing secret |
-| `API_PREFIX` | `/v1` | No | API route prefix |
-| `X_CATALOG_CONSENT_KEY` | — | Yes | Catalog service auth key |
-| `CONSENT_MANAGER_URL` | — | Yes | Public URL of this service |
-| `NODE_ENV` | `development` | No | Runtime environment |
-| `SESSION_SECRET` | — | Yes | Express session secret |
-| `MANDRILL_API_KEY` | — | No | Mandrill email API key |
-| `NODEMAILER_HOST` | — | No | SMTP host |
-| `NODEMAILER_PORT` | — | No | SMTP port |
-| `NODEMAILER_USER` | — | No | SMTP username |
-| `NODEMAILER_PASS` | — | No | SMTP password |
-| `CONTRACT_SERVICE_URL` | — | No | Contract service base URL |
+| `PORT` | `8080` | No | HTTP listen port |
+| `API_PREFIX` | `/v1` | No | Context path for all API routes |
+| `DB_URL` | — | Yes | JDBC URL, e.g. `jdbc:postgresql://db:5432/consent_manager` |
+| `DB_USER` | — | Yes | Database user |
+| `DB_PASSWORD` | — | Yes | Database password |
+| `CONSENT_MANAGER_URL` | — | Yes | Public base URL of this service |
+| `CONTRACT_SERVICE_URL` | — | Yes | Contract Service base URL |
+| `IDP_*` | — | Yes | Trusted IDP configuration — see TICKET-003 |
+| `CONSENT_SIGNING_KEY_PATH` | — | Yes | Path to the consent receipt signing key — see TICKET-011 |
+| `SMTP_*` | — | No | Notification transport — see TICKET-013 |
+| `MICRONAUT_ENVIRONMENTS` | `dev` | No | Active environment profile |
 
-### Custom Error Classes (`errors/index.ts`)
+There is **no** `JWT_SECRET_KEY`, `OAUTH_SECRET_KEY`, `SESSION_SECRET`, `SALT_ROUNDS` or
+`X_CATALOG_CONSENT_KEY`. The service issues no tokens, stores no credentials and holds no sessions.
 
-Create the following error classes, each extending a base `AppError`:
+### Error Model
 
-| Class | HTTP Status | Use Case |
-|-------|-------------|----------|
-| `BadRequestError` | 400 | Invalid request data |
-| `NotFoundError` | 404 | Resource not found |
-| `ForbiddenError` | 403 | Insufficient permissions |
-| `BadEndpointError` | 502 | External service endpoint failure |
-| `ThirdPartyError` | 502 | External service returned error |
+Define the exception hierarchy and an RFC 7807 Problem Details response body:
 
-### Global Error Handler (Stub)
+| Exception | HTTP Status | Use Case |
+|-----------|-------------|----------|
+| `BadRequestException` | 400 | Invalid request data or illegal state transition |
+| `NotFoundException` | 404 | Resource not found |
+| `ForbiddenException` | 403 | Authenticated but not permitted |
+| `UpstreamServiceException` | 502 | Contract Service or other upstream failure |
 
-Create `src/middleware/globalErrorHandler.ts` as a minimal stub that catches errors and returns a generic 500 JSON response. The full implementation (handling all 5 error classes, production stack trace suppression) is owned by TICKET-015.
+`GlobalExceptionHandler` is created here as a stub returning a generic 500. The full implementation
+(all exception types, constraint-violation mapping, production detail suppression) is owned by
+TICKET-015.
 
-### Logging Configuration (Stub)
+### Logging
 
-Create `src/libs/loggers/index.ts` as a minimal wrapper around `console` (or a basic Winston instance with console transport only). The full configuration (daily-rotate-file transport, configurable max size/file count, log levels) is owned by TICKET-015.
+`logback.xml` writes **structured JSON to stdout** — no file appenders, no rotation. Log rotation
+and retention are the responsibility of the container platform. Include an MDC-based correlation ID
+filter so requests can be traced across log lines.
 
-### Swagger Spec (Skeleton)
+### Docker and Compose
 
-Create `docs/swagger.json` as a minimal OpenAPI 3.0 skeleton with the `info` block and an empty `paths` object. The full endpoint documentation is owned by TICKET-015.
+- Multi-stage `Dockerfile`: Gradle build stage, then a distroless or `eclipse-temurin:21-jre-alpine`
+  runtime stage carrying only the shadow JAR.
+- `compose.yaml` starts the application plus a plain `postgres:16` container. **No replica set, no
+  initialisation script** — the session store that required one is gone.
+- Optionally add a GraalVM native-image build variant behind a Gradle flag; not required for MVP.
 
-### Docker Configuration
+### Gradle Tasks
 
-- Multi-stage Dockerfile for production builds
-- Docker Compose with:
-  - App service (Node.js)
-  - MongoDB service with replica set initialization
-  - Shared network
-  - Volume mounts for development
-
-### NPM Scripts
-
-| Script | Command | Description |
-|--------|---------|-------------|
-| `build` | `tsc` | Compile TypeScript |
-| `start` | `node dist/index.js` | Run production build |
-| `dev` | `nodemon src/index.ts` | Development with auto-reload |
-| `test` | `ts-mocha ...` | Run test suite |
-| `lint` | `eslint src/` | Lint check |
-| `format` | `prettier --write . && eslint --fix src/` | Format code |
+| Task | Purpose |
+|------|---------|
+| `./gradlew build` | Compile, run tests, assemble |
+| `./gradlew run` | Run locally with the `dev` environment |
+| `./gradlew test` | Run the test suite |
+| `./gradlew spotlessApply` | Format sources |
+| `./gradlew dockerBuild` | Build the container image |
 
 ## Acceptance Criteria
 
-1. [ ] Running `pnpm install` succeeds with no errors
-2. [ ] Running `pnpm run build` compiles TypeScript without errors
-3. [ ] Running `pnpm run dev` starts the Express server and connects to MongoDB
-4. [ ] `GET /health` returns `200 OK` with service status
-5. [ ] `GET /docs` serves Swagger UI with the OpenAPI spec skeleton
-6. [ ] All 5 custom error classes are defined and a stub global error handler is mounted (full implementation in TICKET-015)
-7. [ ] A stub Winston logger is available for import (full configuration in TICKET-015)
-8. [ ] `docker-compose up` starts the app and MongoDB with replica set
-9. [ ] Environment variables are loaded from `.env` with sensible defaults
-10. [ ] ESLint and Prettier configurations are in place and `pnpm run lint` passes
-11. [ ] A `.env.sample` file documents all environment variables
+1. [ ] `./gradlew build` completes with no errors and no warnings from the annotation processors
+2. [ ] `./gradlew run` starts the service and connects to PostgreSQL
+3. [ ] Flyway runs on startup and reports the schema version (initially empty baseline)
+4. [ ] `GET /health` returns `200 OK` with `UP` status including the datasource health indicator
+5. [ ] `GET /health/readiness` reports `DOWN` while the database is unreachable
+6. [ ] `GET /metrics` exposes Prometheus-format metrics
+7. [ ] `GET /swagger-ui` serves the generated OpenAPI spec (empty paths at this stage)
+8. [ ] All four exception types are defined and a stub exception handler is registered
+9. [ ] Logs are emitted as single-line JSON to stdout with a correlation ID field
+10. [ ] `docker compose up` starts the application and PostgreSQL, and the health endpoint passes
+11. [ ] `.env.sample` documents every environment variable the application reads
+12. [ ] A Testcontainers PostgreSQL fixture is available to test classes and a smoke test uses it
 
-## Known Issues to Address
+## Notes on Removed Concerns
 
-These bugs from the original codebase should be corrected in the reimplementation:
+The following appeared in the pre-revision version of this ticket and are deliberately absent:
 
-1. **Global error handler incomplete** (original bug 13.2): The stub created here only needs to catch errors and return a generic 500. The full implementation handling all 5 custom error classes is owned by TICKET-015.
-2. **Simulated contract router escapes error handler** (original bug 13.1): Ensure all routes — including development-only routes — are mounted before the global error handler.
-3. **User JSON-LD URL hardcodes API prefix** (original bug 13.6): Use `API_PREFIX` from environment configuration throughout, never hardcode `/v1`.
-4. **Key files loaded synchronously at import** (original bug 18.7): Design the key loading to be lazy or async, not synchronous at module import time.
+- **MongoDB and replica-set initialisation** — replaced by PostgreSQL with Flyway migrations. The
+  replica set existed only to support the `connect-mongo` session store.
+- **`express-session`, `connect-mongo`, `bcryptjs`, `jsonwebtoken` signing secrets** — the service
+  is a stateless OAuth2 resource server (TICKET-003).
+- **Joi** — replaced by Jakarta Bean Validation, which is declarative on DTOs.
+- **Winston daily-rotate-file** — replaced by JSON to stdout.
+- **Hand-maintained `docs/swagger.json`** — the spec is now a build artefact (TICKET-015), so it
+  cannot drift from the code.
+- **`API_PREFIX` hardcoding risk** (original bug 13.6) — the prefix is a framework-level context
+  path, so no code constructs URLs from a literal `/v1`.
+- **Synchronous key loading at module import** (original bug 18.7) — keys are loaded by an
+  injectable singleton with eager startup validation (TICKET-011), not by static initialisers.

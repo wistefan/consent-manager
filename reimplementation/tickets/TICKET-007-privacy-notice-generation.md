@@ -13,127 +13,181 @@
 
 ## Description
 
-Implement privacy notice generation from contracts fetched from the Contract Service, privacy notice archival, and retrieval with external data population. Privacy notices are the bridge between contracts (managed by the Contract Service) and consents (managed by this service) — they describe what data will be processed, for what purpose, and under what conditions.
+Generate privacy notices from contracts fetched from the Contract Service, archive superseded
+notices, and serve notices with external data resolved.
+
+Privacy notices are the bridge between contracts (owned by the Contract Service) and consents (owned
+by this service): they describe what data will be processed, for what purpose, and under what terms.
+
+**The Contract Service remains the largest external dependency of the Consent Manager.** Removing
+data exchange from scope did not change that — consent is still meaningless without the contract
+that defines what is being consented to.
 
 ## Technical Details
 
+### API Change: Identifiers Instead of Base64 URLs
+
+The pre-revision API passed provider and consumer as **base64-encoded self-description URLs** in
+path and body parameters, and resolved participants by matching `selfDescriptionURL`.
+
+That is replaced throughout: parties are named by their **global participant identifier**, and
+resolved with `ParticipantRepository.findByIdentifier`. Identifiers travel as ordinary URL-encoded
+strings. Nothing in the service base64-encodes a parameter any more.
+
 ### Endpoints
 
-#### 1. Generate Privacy Notice Between Parties — `POST /consents/privacy-notices`
+#### 1. Generate a Privacy Notice Between Parties — `POST /privacy-notices` (US-CM-001)
 
-**Auth:** `verifyParticipantJWT`
+**Auth:** `PARTICIPANT`
 
 **Request Body:**
 ```json
 {
-  "contract": "string (required — contract URI)",
-  "dataProvider": "string (required — base64-encoded provider self-description URL)",
-  "dataConsumer": "string (required — base64-encoded consumer self-description URL)"
+  "contractUri": "string (required)",
+  "dataProvider": "string (required — global participant identifier)",
+  "dataConsumer": "string (required — global participant identifier)"
 }
 ```
 
 **Flow:**
-1. Decode base64 provider and consumer self-description URLs
-2. Find the Provider and Consumer Participant documents by `selfDescriptionURL`
-3. Fetch the contract from the Contract Service: `GET {CONTRACT_SERVICE_URL}/contracts/{contractId}`
-4. Check if an active (non-archived) PrivacyNotice already exists for this contract + provider
-5. If one exists, return it (no duplicate creation)
-6. If a stale one exists (contract has been updated since), archive it (`archivedAt = new Date()`)
-7. Extract privacy notice fields from the contract:
-   - `purposes` from contract service offerings
-   - `data` / `categoriesOfData` from data resource descriptions
-   - `recipients` from contract parties
-   - `controllerDetails` from provider participant info
-   - `retentionPeriod`, `piiPrincipalRights`, `internationalTransfers` from contract terms
-8. Create a new PrivacyNotice document
-9. Return the created privacy notice
+1. Resolve both participants by identifier; 404 if either is unknown.
+2. Verify the caller is one of the two named parties; otherwise **403**.
+3. Fetch the contract from the Contract Service.
+4. Look for an active (`archived_at IS NULL`) notice for `(contractUri, providerId)`:
+   - identical contract content → return it, `200 OK`, no duplicate created;
+   - contract has changed → archive the existing notice, then create a new one.
+5. Extract the notice content from the contract (see below) and persist it as the `payload` JSONB.
 
-**Response:** `201 Created` with PrivacyNotice object
+**Response:** `201 Created` (new) or `200 OK` (existing).
 
-#### 2. Generate Privacy Notice by Contract URI — Alternative path using contract URI directly
+The partial unique index from TICKET-002 enforces "at most one active notice per contract and
+provider" at the database level, so a race between two concurrent generations resolves to one
+active notice rather than two.
 
-**Auth:** `verifyParticipantJWT`
+#### 2. Generate a Privacy Notice by Contract URI — `POST /privacy-notices/by-contract` (US-CM-022)
 
-Same as above but the contract is identified by its full URI rather than a separate contract ID.
+**Auth:** `PARTICIPANT`
 
-#### 3. Retrieve Privacy Notice by ID — `GET /consents/privacy-notices/:id`
+**Request Body:** `{ "contractUri": "string (required)" }`
 
-**Auth:** `verifyParticipantJWT` or `verifyUserKey`
+Fetches the contract and derives the provider and consumer from the contract itself rather than
+requiring the caller to name them. Same duplicate and archival handling as above. The caller must
+still be one of the parties named in the fetched contract.
+
+#### 3. Retrieve a Privacy Notice — `GET /privacy-notices/{id}` (US-CM-002)
+
+**Auth:** `USER`, `PARTICIPANT`, or `CATALOG`
+
+**Query Parameters:** `resolve` (boolean, default `true`) — resolve external references.
 
 **Flow:**
-1. Find PrivacyNotice by ID
-2. Populate external data:
-   - Fetch full contract details from Contract Service
-   - Fetch data resource descriptions from service offering endpoints
-   - Fetch recipient details
-   - Fetch purpose descriptions
-3. Return the privacy notice with populated data
+1. Load the notice; 404 if unknown.
+2. When `resolve=true`, populate from the Contract Service and the referenced self-descriptions:
+   contract title and terms, data resource descriptions, purpose descriptions, recipient details.
+3. Return the notice with a `resolution` block reporting what was resolved and what was not.
 
-**Response:** `200 OK` with populated PrivacyNotice
+**Response:** `200 OK`
 
-### Contract Service Integration
+Archived notices remain retrievable by ID — a consent granted against one must stay readable — and
+carry `archivedAt` in the response.
 
-**External Service:** Contract Service at `CONTRACT_SERVICE_URL`
+### Contract Service Client
 
-**Endpoints Used:**
-- `GET /contracts/{contractId}` — Fetch contract details
-- `GET /contracts/bilateral` — Fetch bilateral contracts for a participant
-- `GET /contracts/ecosystem` — Fetch ecosystem contracts for a participant
+A declarative Micronaut `@Client`, replacing the ad-hoc Axios calls:
 
-**Data Extraction from Contract:**
+```java
+@Client("${consent-manager.contract-service.url}")
+public interface ContractServiceClient {
+    @Get("/contracts/{contractId}")
+    Optional<ContractResponse> fetchContract(String contractId);
 
-The contract response contains service offerings with:
-- `serviceOffering` — URL to the service offering description
-- `participant` — Provider or consumer identifier
-- `policies` — Data processing policies including purposes
+    @Get("/bilaterals/{contractId}")
+    Optional<ContractResponse> fetchBilateralContract(String contractId);
 
-For each service offering, fetch the full description to extract:
-- `dataResources` — List of data categories and items
-- `softwareResources` — Related software components
+    @Get("/contracts/for/{participantIdentifier}")
+    List<ContractResponse> fetchContractsFor(String participantIdentifier, @QueryValue boolean hasSigned);
 
-### Archival Logic
-
-When a new privacy notice is generated for a contract that already has one:
-1. Set `archivedAt = new Date()` on the existing notice
-2. Create a new notice with current data
-3. Archived notices remain queryable but are excluded from active lookups
-
-### Files to Create/Modify
-
-```
-src/controllers/consentsController.ts  # Privacy notice functions (or separate controller)
-src/routes/consent.ts                  # Privacy notice routes
-```
-
-### External Data Population
-
-When retrieving a privacy notice, the response should include populated data fetched from external services:
-
-```typescript
-interface PopulatedPrivacyNotice {
-  // ... all PrivacyNotice fields ...
-  populatedContract: object;      // Full contract details
-  populatedDataResources: object[]; // Resolved data resource descriptions
-  populatedPurposes: object[];     // Resolved purpose descriptions
-  populatedRecipients: object[];   // Resolved recipient details
+    @Get("/bilaterals/for/{participantIdentifier}")
+    List<ContractResponse> fetchBilateralsFor(String participantIdentifier, @QueryValue boolean hasSigned);
 }
 ```
 
-Use `axios` with error handling for all external service calls. If an external fetch fails, include the error in the response rather than failing the entire request.
+Configuration: connect and read timeouts, a bounded retry with backoff on 5xx and timeouts (never on
+4xx), and a Caffeine cache with a configurable TTL on contract reads — replacing
+`axios-cache-interceptor`.
+
+### Content Extraction
+
+From the contract response, derive the notice payload:
+
+| Notice field | Source |
+|--------------|--------|
+| `title` | Contract title |
+| `purposes` | Service offering policies |
+| `categoriesOfData`, `data` | Data resource descriptions referenced by the offerings |
+| `recipients` | Contract parties |
+| `controllerDetails` | Provider participant record |
+| `retentionPeriod`, `piiPrincipalRights`, `internationalTransfers`, `withdrawalOfConsent` | Contract terms |
+
+### Partial Resolution, Never Partial Failure
+
+Resolving a notice fans out to several external documents. A failure to fetch one of them must not
+fail the request: return the notice with that section unresolved and a machine-readable note saying
+so.
+
+```json
+{
+  "id": "...",
+  "contractUri": "...",
+  "purposes": [ ... ],
+  "resolution": {
+    "contract": "RESOLVED",
+    "dataResources": "UNAVAILABLE",
+    "purposes": "RESOLVED",
+    "recipients": "RESOLVED"
+  }
+}
+```
+
+A hard failure is warranted in exactly one place: **generation** cannot proceed without the contract
+itself, so an unreachable Contract Service there returns `502` via `UpstreamServiceException`.
+
+### Files to Create
+
+```
+src/main/java/eu/prometheusx/consentmanager/
+  api/PrivacyNoticeController.java
+  api/dto/PrivacyNoticeResponse.java
+  api/dto/GeneratePrivacyNoticeRequest.java
+  service/PrivacyNoticeService.java
+  service/ContractContentExtractor.java
+  client/ContractServiceClient.java
+  client/dto/ContractResponse.java
+```
 
 ## Acceptance Criteria
 
-1. [ ] `POST /consents/privacy-notices` generates a privacy notice from a contract
-2. [ ] Duplicate privacy notices are not created for the same contract + provider
-3. [ ] Stale privacy notices are archived when the contract has been updated
-4. [ ] `GET /consents/privacy-notices/:id` returns the privacy notice with populated external data
-5. [ ] External service failures are handled gracefully (logged, partial data returned)
-6. [ ] Privacy notice fields are correctly extracted from contract service offerings
-7. [ ] Archived notices have `archivedAt` set and are excluded from active lookups
-8. [ ] Integration tests mock the Contract Service and verify notice generation
+1. [ ] `POST /privacy-notices` generates a notice from a contract for two named participants
+2. [ ] Parties are named by global identifier; no parameter anywhere is base64-encoded
+3. [ ] A caller that is neither provider nor consumer receives 403
+4. [ ] Generating twice for an unchanged contract returns the existing notice with 200
+5. [ ] Generating after a contract change archives the old notice and creates a new one
+6. [ ] Concurrent generation for the same contract and provider yields exactly one active notice
+7. [ ] `POST /privacy-notices/by-contract` derives both parties from the contract
+8. [ ] `GET /privacy-notices/{id}` resolves contract, data resources, purposes and recipients
+9. [ ] An unavailable external document yields a partial response with `UNAVAILABLE`, not a 5xx
+10. [ ] An unreachable Contract Service during generation returns 502
+11. [ ] Archived notices remain retrievable by ID and report `archivedAt`
+12. [ ] Contract reads are cached and a repeated generation makes no second upstream call
+13. [ ] Retries apply to 5xx and timeouts only, never to 4xx
+14. [ ] Integration tests stub the Contract Service with WireMock
+15. [ ] Parameterized tests cover the extraction matrix across contract shapes, including missing optional sections
 
-## Known Issues to Address
+## Changes from the Pre-Revision Ticket
 
-1. **External data population failures**: The original code does not gracefully handle failures when fetching service offerings or data resources. Implement fallback behavior (return the notice with unpopulated fields rather than failing).
-2. **Contract caching**: Consider using axios-cache-interceptor to avoid redundant contract fetches, as the original does.
-3. **Base64 URL encoding**: Provider and consumer self-description URLs are base64-encoded in request parameters. Ensure consistent encoding/decoding across all endpoints.
+- Participants are resolved by **global identifier**, not by matching `selfDescriptionURL`, and
+  parameters are no longer base64-encoded.
+- The Contract Service client is a declarative `@Client` with typed responses, timeouts, bounded
+  retry and a Caffeine cache, replacing raw Axios calls.
+- Partial resolution is now a specified response shape rather than an unhandled failure mode.
+- Duplicate prevention is backed by a database constraint, not only by an application-level check.
